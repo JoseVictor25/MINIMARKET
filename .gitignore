@@ -1,0 +1,12 @@
+.venv/
+venv/
+__pycache__/
+build/
+dist/
+*.spec
+*.db
+*.db-shm
+*.db-wal
+*.pyc
+.idea/
+.vscode/
