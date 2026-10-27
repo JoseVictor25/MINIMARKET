@@ -11,10 +11,12 @@ from PyQt5.QtGui import QPixmap, QIcon, QPainter, QColor
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QFrame, QWidget,
+    QMessageBox,
 )
 
 from database import SessionLocal
 from models.usuario import Usuario
+from services.usuario_service import autenticar_usuario, UsernameAmbiguoError
 from config import (
     APP_NAME, SLOGAN, SLOGAN_COLOR, BRAND_COLOR, BRAND_TEXT_COLOR,
     get_brand_hover, get_brand_dark, get_brand_text_color,
@@ -89,7 +91,7 @@ class LoginDialog(QDialog):
         self.usuario_autenticado: Usuario | None = None
         self._build_ui()
         self.setWindowTitle(f"{APP_NAME} – Iniciar Sesión")
-        h = 550 if SLOGAN else 520
+        h = 590 if SLOGAN else 550
         self.setFixedSize(400, h)
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
 
@@ -129,7 +131,7 @@ class LoginDialog(QDialog):
             if p.is_file():
                 pix = QPixmap(str(p))
                 if not pix.isNull():
-                    lbl_logo.setPixmap(pix.scaled(220, 84, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                    lbl_logo.setPixmap(pix.scaled(280, 145, Qt.KeepAspectRatio, Qt.SmoothTransformation))
                     layout.addWidget(lbl_logo)
                     logo_cargado = True
                     break
@@ -347,8 +349,27 @@ class LoginDialog(QDialog):
 
         session = SessionLocal()
         try:
-            usuario = session.query(Usuario).filter_by(username=username, activo=True).first()
-            if usuario and usuario.verificar_password(password):
+            try:
+                usuario = autenticar_usuario(session, username, password)
+            except UsernameAmbiguoError as e:
+                # No se autentica ninguna cuenta si el username es ambiguo:
+                # evita iniciar sesión accidentalmente en otra cuenta.
+                self._show_error("✖  Nombre de usuario ambiguo. Contacte al administrador.")
+                QMessageBox.warning(
+                    self,
+                    "Conflicto de usuarios",
+                    "No se puede iniciar sesión porque existen varias cuentas cuyo "
+                    "nombre de usuario coincide ignorando mayúsculas/minúsculas.\n\n"
+                    f"{e}\n\n"
+                    "Un administrador debe corregir el nombre duplicado. "
+                    "No se modificó ningún registro.",
+                )
+                self.input_pass.clear()
+                self.input_pass.setFocus()
+                self._shake()
+                return
+
+            if usuario:
                 self.usuario_autenticado = usuario
                 session.expunge(usuario)
                 self.accept()

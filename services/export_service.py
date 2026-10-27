@@ -4,12 +4,12 @@ para los módulos de Compras y Ventas.
 """
 from __future__ import annotations
 
-import os
 import csv
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Sequence
+from xml.sax.saxutils import escape as _xml_escape
 
 # Excel (con fallback seguro en caso de no estar instalado)
 try:
@@ -32,6 +32,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 from config import APP_NAME, CURRENCY
 from models.compra import Compra
+from models.producto import Producto
 from models.venta import Venta
 
 
@@ -767,6 +768,369 @@ def exportar_ventas_pdf(ventas: Sequence[Venta], filepath: str, periodo_str: str
     for r in range(1, len(table_rows) - 1):
         if r % 2 == 0:
             t_style.append(('BACKGROUND', (0, r), (-1, r), colors.HexColor("#f8fafc")))
+
+    t_data.setStyle(TableStyle(t_style))
+    elements.append(t_data)
+
+    doc.build(elements, canvasmaker=NumberedCanvas)
+    return filepath
+
+
+# ==============================================================================
+# 3. EXPORTACIÓN DE PRODUCTOS CON BAJO STOCK (EXCEL & PDF)
+# ==============================================================================
+
+def _cantidad_texto(valor: Decimal) -> str:
+    """Formatea una cantidad ya convertida desde milésimas, sin ceros sobrantes."""
+    valor = Decimal(valor)
+    if valor == valor.to_integral_value():
+        return str(int(valor))
+    return f"{valor:.3f}".rstrip("0").rstrip(".")
+
+
+def _texto_pdf(valor) -> str:
+    """Escapa caracteres especiales para que ReportLab no interprete XML en los textos."""
+    return _xml_escape(str(valor if valor is not None else ""))
+
+
+def _faltante_producto(producto: Producto) -> Decimal:
+    """Cantidad faltante para alcanzar el stock mínimo (nunca negativa)."""
+    return max(Decimal("0.000"), producto.stock_minimo - producto.stock_actual)
+
+
+def exportar_productos_bajo_stock_excel(productos: Sequence[Producto], filepath: str) -> str:
+    """Genera un Excel (.xlsx) con los productos cuyo stock actual <= stock mínimo."""
+    if not HAS_OPENPYXL:
+        if not filepath.lower().endswith(".csv"):
+            filepath = str(Path(filepath).with_suffix(".csv"))
+        with open(filepath, "w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.writer(f)
+            writer.writerow([f"{APP_NAME} - REPORTE DE PRODUCTOS CON BAJO STOCK"])
+            writer.writerow([f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}"])
+            writer.writerow([])
+            writer.writerow([
+                "Código", "Producto", "Categoría", "Unidad de Medida",
+                "Stock Actual", "Stock Mínimo", "Faltante para Mínimo",
+            ])
+            for p in productos:
+                writer.writerow([
+                    p.codigo_barras,
+                    p.descripcion,
+                    p.categoria.nombre if p.categoria else "-",
+                    p.unidad_medida,
+                    _cantidad_texto(p.stock_actual),
+                    _cantidad_texto(p.stock_minimo),
+                    _cantidad_texto(_faltante_producto(p)),
+                ])
+        return filepath
+
+    generado = datetime.now()
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Bajo Stock"
+    ws.views.sheetView[0].showGridLines = True
+
+    header_fill = PatternFill(start_color="0F172A", end_color="0F172A", fill_type="solid")
+    zebra_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
+    kpi_fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
+    alert_fill = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
+
+    font_title = Font(name="Calibri", size=16, bold=True, color="0F172A")
+    font_subtitle = Font(name="Calibri", size=11, italic=True, color="475569")
+    font_header = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    font_data = Font(name="Calibri", size=10, color="0F172A")
+    font_kpi = Font(name="Calibri", size=10, bold=True, color="475569")
+    font_kpi_value = Font(name="Calibri", size=12, bold=True, color="B45309")
+    font_empty = Font(name="Calibri", size=11, italic=True, color="64748B")
+
+    thin_border_side = Side(border_style="thin", color="CBD5E1")
+    border_cell = Border(
+        left=thin_border_side, right=thin_border_side,
+        top=thin_border_side, bottom=thin_border_side,
+    )
+
+    total_faltante = sum((_faltante_producto(p) for p in productos), Decimal("0.000"))
+    agotados = sum(1 for p in productos if p.stock_actual <= 0)
+
+    # ── Título y fecha de generación ──────────────────────────────────────────
+    ws.merge_cells("A1:G1")
+    ws["A1"] = f"{APP_NAME} – REPORTE DE PRODUCTOS CON BAJO STOCK"
+    ws["A1"].font = font_title
+    ws["A1"].alignment = Alignment(vertical="center")
+
+    ws.merge_cells("A2:G2")
+    ws["A2"] = (
+        f"Generado: {generado.strftime('%d/%m/%Y %H:%M')}  |  "
+        "Criterio: stock actual menor o igual al stock mínimo (productos activos)"
+    )
+    ws["A2"].font = font_subtitle
+    ws["A2"].alignment = Alignment(vertical="center")
+
+    # ── Resumen ───────────────────────────────────────────────────────────────
+    ws["A4"] = "Productos con bajo stock:"
+    ws["A4"].font = font_kpi
+    ws["B4"] = len(productos)
+    ws["B4"].font = font_kpi_value
+    ws["B4"].fill = kpi_fill
+    ws["B4"].alignment = Alignment(horizontal="center")
+
+    ws["D4"] = "Faltante total:"
+    ws["D4"].font = font_kpi
+    ws["E4"] = float(total_faltante)
+    ws["E4"].font = font_kpi_value
+    ws["E4"].fill = kpi_fill
+    ws["E4"].alignment = Alignment(horizontal="right")
+    ws["E4"].number_format = "#,##0.###"
+
+    ws["F4"] = "Agotados:"
+    ws["F4"].font = font_kpi
+    ws["G4"] = agotados
+    ws["G4"].font = font_kpi_value
+    ws["G4"].fill = kpi_fill
+    ws["G4"].alignment = Alignment(horizontal="center")
+
+    # ── Encabezados ───────────────────────────────────────────────────────────
+    headers = [
+        "Código", "Producto", "Categoría", "Unidad de Medida",
+        "Stock Actual", "Stock Mínimo", "Faltante para Mínimo",
+    ]
+    row_idx = 6
+    for col_idx, h in enumerate(headers, start=1):
+        c = ws.cell(row=row_idx, column=col_idx, value=h)
+        c.font = font_header
+        c.fill = header_fill
+        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        c.border = border_cell
+    ws.row_dimensions[row_idx].height = 30
+
+    # ── Datos ─────────────────────────────────────────────────────────────────
+    for p in productos:
+        row_idx += 1
+        ws.row_dimensions[row_idx].height = 20
+        categoria = p.categoria.nombre if p.categoria else "-"
+        vals = [
+            p.codigo_barras,
+            p.descripcion,
+            categoria,
+            p.unidad_medida,
+            float(p.stock_actual),
+            float(p.stock_minimo),
+            float(_faltante_producto(p)),
+        ]
+        current_fill = zebra_fill if row_idx % 2 == 0 else None
+
+        for col_idx, val in enumerate(vals, start=1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=val)
+            cell.font = font_data
+            cell.border = border_cell
+            if current_fill:
+                cell.fill = current_fill
+
+            if col_idx in (5, 6, 7):
+                cell.alignment = Alignment(horizontal="right", vertical="center")
+                cell.number_format = "#,##0.###"
+            elif col_idx in (1, 4):
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            else:
+                cell.alignment = Alignment(horizontal="left", vertical="center")
+
+        if p.stock_actual <= 0:
+            ws.cell(row=row_idx, column=5).font = Font(name="Calibri", size=10, bold=True, color="DC2626")
+        else:
+            ws.cell(row=row_idx, column=5).font = Font(name="Calibri", size=10, bold=True, color="B45309")
+        ws.cell(row=row_idx, column=7).fill = alert_fill
+
+    if productos:
+        ws.auto_filter.ref = f"A6:G{row_idx}"
+    else:
+        row_idx += 1
+        ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=7)
+        empty_cell = ws.cell(
+            row=row_idx, column=1,
+            value="No se encontraron productos con stock actual menor o igual al stock mínimo.",
+        )
+        empty_cell.font = font_empty
+        empty_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    ws.freeze_panes = "A7"
+
+    # ── Anchos de columna ─────────────────────────────────────────────────────
+    max_producto = max([len(p.descripcion) for p in productos] + [len("Producto")])
+    max_categoria = max(
+        [len(p.categoria.nombre) if p.categoria else 1 for p in productos] + [len("Categoría")]
+    )
+    anchos = {
+        "A": max(12, min(max([len(p.codigo_barras) for p in productos] + [len("Código")]) + 3, 24)),
+        "B": max(22, min(max_producto + 3, 55)),
+        "C": max(16, min(max_categoria + 3, 32)),
+        "D": 18,
+        "E": 14,
+        "F": 14,
+        "G": 21,
+    }
+    for col_letter, ancho in anchos.items():
+        ws.column_dimensions[col_letter].width = ancho
+
+    wb.save(filepath)
+    return filepath
+
+
+def exportar_productos_bajo_stock_pdf(productos: Sequence[Producto], filepath: str) -> str:
+    """Genera un PDF legible e imprimible con los productos de stock bajo o agotados."""
+    doc = SimpleDocTemplate(
+        filepath,
+        pagesize=landscape(A4),
+        leftMargin=14 * mm,
+        rightMargin=14 * mm,
+        topMargin=14 * mm,
+        bottomMargin=16 * mm,
+    )
+
+    estilos = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "DocTitleBajoStock",
+        parent=estilos["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=16,
+        leading=20,
+        textColor=colors.HexColor("#0f172a"),
+    )
+    subtitle_style = ParagraphStyle(
+        "DocSubtitleBajoStock",
+        parent=estilos["Normal"],
+        fontName="Helvetica",
+        fontSize=9,
+        leading=13,
+        alignment=2,
+        textColor=colors.HexColor("#475569"),
+    )
+    th_style = ParagraphStyle(
+        "THBajoStock",
+        parent=estilos["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=9,
+        leading=11,
+        textColor=colors.white,
+        alignment=1,
+    )
+    td_style = ParagraphStyle(
+        "TDBajoStock",
+        parent=estilos["Normal"],
+        fontName="Helvetica",
+        fontSize=8.5,
+        leading=11,
+        textColor=colors.HexColor("#1e293b"),
+    )
+    td_center = ParagraphStyle("TDCenterBajoStock", parent=td_style, alignment=1)
+    td_right = ParagraphStyle("TDRightBajoStock", parent=td_style, alignment=2)
+    td_bold_right = ParagraphStyle(
+        "TDBoldRightBajoStock",
+        parent=td_style,
+        fontName="Helvetica-Bold",
+        alignment=2,
+        textColor=colors.HexColor("#b45309"),
+    )
+
+    generado = datetime.now()
+    total_faltante = sum((_faltante_producto(p) for p in productos), Decimal("0.000"))
+    agotados = sum(1 for p in productos if p.stock_actual <= 0)
+
+    elements = []
+
+    # ── Encabezado con título y fecha ─────────────────────────────────────────
+    hdr_data = [[
+        Paragraph(
+            f"<b>{_texto_pdf(APP_NAME)}</b><br/>"
+            "<font size=12 color='#0284c7'>Reporte de Productos con Bajo Stock</font>",
+            title_style,
+        ),
+        Paragraph(
+            f"<b>Generado:</b> {generado.strftime('%d/%m/%Y %H:%M')}<br/>"
+            "<b>Criterio:</b> stock actual menor o igual al stock mínimo",
+            subtitle_style,
+        ),
+    ]]
+    t_hdr = Table(hdr_data, colWidths=[165 * mm, 104 * mm])
+    t_hdr.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    elements.append(t_hdr)
+    elements.append(Spacer(1, 4 * mm))
+
+    # ── Resumen ───────────────────────────────────────────────────────────────
+    kpi_data = [
+        [
+            Paragraph("<b>PRODUCTOS CON BAJO STOCK</b>", ParagraphStyle("KB1", fontName="Helvetica-Bold", fontSize=8.5, textColor=colors.HexColor("#475569"))),
+            Paragraph("<b>FALTANTE TOTAL (UNIDADES)</b>", ParagraphStyle("KB2", fontName="Helvetica-Bold", fontSize=8.5, textColor=colors.HexColor("#475569"))),
+            Paragraph("<b>PRODUCTOS AGOTADOS</b>", ParagraphStyle("KB3", fontName="Helvetica-Bold", fontSize=8.5, textColor=colors.HexColor("#475569"))),
+        ],
+        [
+            Paragraph(f"<font size=13 color='#b45309'><b>{len(productos)} productos</b></font>", td_style),
+            Paragraph(f"<font size=13 color='#b45309'><b>{_cantidad_texto(total_faltante)}</b></font>", td_style),
+            Paragraph(f"<font size=13 color='#dc2626'><b>{agotados} agotados</b></font>", td_style),
+        ],
+    ]
+    t_kpis = Table(kpi_data, colWidths=[90 * mm, 90 * mm, 89 * mm])
+    t_kpis.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
+        ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#cbd5e1")),
+        ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+    ]))
+    elements.append(t_kpis)
+    elements.append(Spacer(1, 5 * mm))
+
+    # ── Tabla de productos ────────────────────────────────────────────────────
+    col_widths = [28 * mm, 70 * mm, 43 * mm, 18 * mm, 27 * mm, 27 * mm, 30 * mm]
+    table_rows = [[
+        Paragraph("<b>Código</b>", th_style),
+        Paragraph("<b>Producto</b>", th_style),
+        Paragraph("<b>Categoría</b>", th_style),
+        Paragraph("<b>Unidad</b>", th_style),
+        Paragraph("<b>Stock Actual</b>", th_style),
+        Paragraph("<b>Stock Mínimo</b>", th_style),
+        Paragraph("<b>Faltante</b>", th_style),
+    ]]
+
+    for p in productos:
+        table_rows.append([
+            Paragraph(_texto_pdf(p.codigo_barras), td_center),
+            Paragraph(_texto_pdf(p.descripcion), td_style),
+            Paragraph(_texto_pdf(p.categoria.nombre if p.categoria else "-"), td_style),
+            Paragraph(_texto_pdf(p.unidad_medida), td_center),
+            Paragraph(_cantidad_texto(p.stock_actual), td_right),
+            Paragraph(_cantidad_texto(p.stock_minimo), td_right),
+            Paragraph(_cantidad_texto(_faltante_producto(p)), td_bold_right),
+        ])
+
+    if not productos:
+        table_rows.append([
+            Paragraph(
+                "No se encontraron productos con stock actual menor o igual al stock mínimo.",
+                td_style,
+            ),
+            "", "", "", "", "", "",
+        ])
+
+    t_data = Table(table_rows, colWidths=col_widths, repeatRows=1)
+    t_style = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0f172a")),
+        ("BOX", (0, 0), (-1, -1), 0.7, colors.HexColor("#cbd5e1")),
+        ("INNERGRID", (0, 0), (-1, -2), 0.3, colors.HexColor("#e2e8f0")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]
+    if not productos:
+        t_style.append(("SPAN", (0, -1), (-1, -1)))
+        t_style.append(("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#f8fafc")))
+
+    for r in range(1, len(table_rows)):
+        if productos and r % 2 == 0:
+            t_style.append(("BACKGROUND", (0, r), (-1, r), colors.HexColor("#f8fafc")))
 
     t_data.setStyle(TableStyle(t_style))
     elements.append(t_data)

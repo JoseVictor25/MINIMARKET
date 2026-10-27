@@ -34,7 +34,7 @@ from models.usuario import Usuario
 from models.caja import SesionCaja
 from services.venta_service import registrar_venta, StockInsuficienteError
 from services.ticket_service import generar_ticket_pdf
-from services.caja_service import obtener_caja_activa
+from services.caja_service import cajas_abiertas_usuario
 from services.archivo_service import resolver_ruta, guardar_comprobante_pago, guardar_qr_usuario
 from services.qr_service import generar_pixmap_qr_dinamico, generar_qr_pil
 from ui.caja_dialog import AperturaCajaDialog, CierreCajaDialog
@@ -227,6 +227,8 @@ class CobrarDialog(QDialog):
         self.metodo_pago = "efectivo"
         self.venta_registrada = None
         self.pdf_path = None
+        self.venta_confirmada = False
+        self._confirmando = False
         self._comprobante_temp_path: str | None = None
         self._mixto_comprobante_temp_path: str | None = None
         self._modo_qr = "personal"
@@ -1576,6 +1578,9 @@ class CobrarDialog(QDialog):
     # ── Confirmar Venta ───────────────────────────────────────────────────────
 
     def _confirmar(self):
+        # Evita registrar dos veces la misma venta por doble clic o doble Enter
+        if self._confirmando or self.venta_confirmada:
+            return
         self.lbl_error.hide()
         metodo = self.metodo_pago
         observacion = None
@@ -1639,6 +1644,8 @@ class CobrarDialog(QDialog):
         cliente_id = self.cliente_id
         usuario_id = self.usuario_id
 
+        self._confirmando = True
+        self.btn_confirmar.setEnabled(False)
         try:
             with get_session() as tx:
                 from models.usuario import Usuario as UsuarioModel
@@ -1694,15 +1701,30 @@ class CobrarDialog(QDialog):
                     "comprobante_pago": comp_pago,
                 }
 
+            # El commit ocurrió al salir del bloque get_session()
+            self.venta_confirmada = True
+            self._confirmando = False
             self.accept()
 
         except StockInsuficienteError as e:
+            # Se usan solo valores primitivos capturados por la excepción:
+            # tras el rollback/cierre de la sesión el objeto ORM ya no es accesible.
+            self._confirmando = False
+            self.btn_confirmar.setEnabled(True)
+            mensaje = (
+                f"Stock insuficiente para '{e.descripcion}'.\n"
+                f"Stock disponible: {e.disponible}\n"
+                f"Cantidad solicitada: {e.requerido}"
+            )
             self.lbl_error.setText(
-                f"⚠ Stock insuficiente: {e.producto.descripcion}\n"
-                f"Disponible: {e.disponible} – Requerido: {e.requerido}"
+                f"⚠ Stock insuficiente: {e.descripcion} – "
+                f"disponible: {e.disponible}, solicitado: {e.requerido}"
             )
             self.lbl_error.show()
+            QMessageBox.warning(self, "Stock insuficiente", mensaje)
         except Exception as e:
+            self._confirmando = False
+            self.btn_confirmar.setEnabled(True)
             self.lbl_error.setText(f"Error al registrar venta: {e}")
             self.lbl_error.show()
 
@@ -2046,6 +2068,8 @@ class CobroExitosoDialog(QDialog):
 class POSWidget(QWidget):
     """Panel interactivo del Punto de Venta."""
 
+    datos_actualizados = pyqtSignal(str)
+
     def __init__(self, usuario: Usuario, parent=None):
         super().__init__(parent)
         self.usuario = usuario
@@ -2109,13 +2133,10 @@ class POSWidget(QWidget):
             ("Enter", "Escanear"),
             ("F11", "Buscar"),
             ("F12", "Cobrar"),
-        ]
-        if not es_admin:
-            atajos.append(("F9", "Caja"))
-        atajos.extend([
+            ("F9", "Caja"),
             ("Del", "Quitar"),
             ("Esc", "Cancelar"),
-        ])
+        ]
         for key, desc in atajos:
             chip = QLabel(f"<b style='color: #000000;'>{key}</b> {desc}")
             chip.setFixedHeight(30)
@@ -2179,8 +2200,6 @@ class POSWidget(QWidget):
         right_header.addWidget(self.btn_caja_accion)
 
         if es_admin:
-            self.badge_caja.hide()
-            self.btn_caja_accion.hide()
             lbl_usuario_txt = f"🛡️ <b>{self.usuario.username}</b>"
         else:
             lbl_usuario_txt = f"👤 Cajero: <b>{self.usuario.username}</b>"
@@ -2693,8 +2712,7 @@ class POSWidget(QWidget):
         QShortcut(QKeySequence("F12"), self).activated.connect(self._abrir_cobro)
         QShortcut(QKeySequence("Escape"), self).activated.connect(self._limpiar_venta)
         QShortcut(QKeySequence("F11"), self).activated.connect(self._abrir_buscar)
-        if not self.usuario.es_admin():
-            QShortcut(QKeySequence("F9"), self).activated.connect(self._gestionar_caja)
+        QShortcut(QKeySequence("F9"), self).activated.connect(self._gestionar_caja)
         QShortcut(QKeySequence("Delete"), self).activated.connect(self._eliminar_fila_seleccionada)
 
     def _restaurar_foco_barcode(self):
@@ -3226,19 +3244,18 @@ class POSWidget(QWidget):
     # ── Control de Caja y Sesión Activa ───────────────────────────────────────
 
     def _verificar_caja_activa(self):
-        """Consulta la base de datos para obtener la caja actualmente abierta y almacena sus datos en primitivas."""
+        """Obtiene SOLO la caja abierta del usuario autenticado (sin herencia de cajas ajenas)."""
         caja_encontrada = None
         try:
             with get_session() as session:
-                caja_encontrada = obtener_caja_activa(session, self.usuario.id)
-                if not caja_encontrada and self.usuario.es_admin() and not self.usuario.tiene_rol("cajero"):
-                    caja_encontrada = obtener_caja_activa(session)
+                propias = cajas_abiertas_usuario(session, self.usuario.id)
+                caja_encontrada = propias[0] if propias else None
 
                 if caja_encontrada:
                     self._caja_activa_id = caja_encontrada.id
                     self._caja_activa_turno = str(caja_encontrada.turno)
                     self._caja_activa_monto_inicial = Decimal(str(caja_encontrada.monto_inicial_bs))
-                    self._sesion_caja_activa = caja_encontrada
+                    self._sesion_caja_activa = None  # no conservar objetos ORM de sesiones cerradas
                 else:
                     self._caja_activa_id = None
                     self._caja_activa_turno = ""
@@ -3334,15 +3351,17 @@ class POSWidget(QWidget):
             self._verificar_caja_activa()
             if self._caja_activa_id:
                 self._set_status(f"✓ Caja abierta para el turno {self._caja_activa_turno}.", "success")
+            self.datos_actualizados.emit("caja")
         self._restaurar_foco_barcode()
 
     def _abrir_formulario_cierre(self):
         if not self._caja_activa_id:
             return
-        dlg = CierreCajaDialog(self._caja_activa_id, self)
+        dlg = CierreCajaDialog(self._caja_activa_id, self.usuario, self)
         if dlg.exec() == QDialog.Accepted:
             self._verificar_caja_activa()
             self._set_status("✓ Caja cerrada. Arqueo finalizado con éxito.", "info")
+            self.datos_actualizados.emit("caja")
         self._restaurar_foco_barcode()
 
     def _actualizar_badge_qr(self):
@@ -3407,7 +3426,11 @@ class POSWidget(QWidget):
         self._restaurar_foco_barcode()
 
     def actualizar(self):
-        """Método invocado al entrar a la pestaña del POS desde la barra lateral."""
+        """Método invocado al entrar a la pestaña del POS o tras cambios en otros módulos."""
+        try:
+            self.session.expire_all()
+        except Exception:
+            pass
         self._verificar_caja_activa()
         self._actualizar_badge_qr()
         self._actualizar_autocompletado()
@@ -3452,6 +3475,11 @@ class POSWidget(QWidget):
                     self.session.expire_all()
                 except Exception:
                     pass
+
+                # Notificar al MainWindow solo después del commit exitoso
+                if getattr(dlg, "venta_confirmada", False):
+                    self._verificar_caja_activa()
+                    self.datos_actualizados.emit("venta")
 
                 # Mostrar pantalla de venta completada con Vuelto prominente
                 exito_dlg = CobroExitosoDialog(

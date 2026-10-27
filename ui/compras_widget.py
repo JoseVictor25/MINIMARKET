@@ -8,7 +8,7 @@ import calendar
 from datetime import datetime, date
 from decimal import Decimal
 
-from PyQt5.QtCore import Qt, QDate
+from PyQt5.QtCore import Qt, QDate, pyqtSignal
 from PyQt5.QtGui import QFont, QColor
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
@@ -572,12 +572,22 @@ class DetalleCompraDialog(QDialog):
 class ComprasWidget(QWidget):
     """Panel de historial y gestión de compras a proveedores con filtros avanzados y exportación."""
 
+    datos_actualizados = pyqtSignal(str)
+
     def __init__(self, usuario: Usuario, parent=None):
         super().__init__(parent)
         self.usuario = usuario
         self.session = SessionLocal()
         self._compras_filtradas: list[Compra] = []
         self._build_ui()
+        self._cargar_compras()
+
+    def actualizar(self):
+        """Refresca el historial de compras conservando los filtros actuales."""
+        try:
+            self.session.expire_all()
+        except Exception:
+            pass
         self._cargar_compras()
 
     def _build_ui(self):
@@ -940,8 +950,8 @@ class ComprasWidget(QWidget):
     def _nueva_compra(self):
         dlg = NuevaCompraDialog(usuario=self.usuario, parent=self)
         if dlg.exec():
-            self.session.expire_all()
-            self._cargar_compras()
+            self.actualizar()
+            self.datos_actualizados.emit("compra")
 
     def _exportar_excel(self):
         if not self._compras_filtradas:

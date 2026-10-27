@@ -450,6 +450,8 @@ class MainWindow(QMainWindow):
             self._widgets[clave] = w
             self.stack.addWidget(w)
 
+        self._conectar_senales_actualizacion()
+
         if claves:
             self._cambiar_seccion(0)
 
@@ -463,6 +465,65 @@ class MainWindow(QMainWindow):
         self.lbl_alertas = QLabel("")
         self.lbl_alertas.setStyleSheet(f"color: {PALETTE['warning']}; font-weight: bold;")
         self.status.addPermanentWidget(self.lbl_alertas)
+
+    def _conectar_senales_actualizacion(self):
+        """Conecta la señal común de todos los módulos con el coordinador central."""
+        for clave, widget in self._widgets.items():
+            señal = getattr(widget, "datos_actualizados", None)
+            if señal is not None:
+                try:
+                    señal.connect(
+                        lambda operacion, origen=clave: self._on_datos_actualizados(origen, operacion)
+                    )
+                except Exception:
+                    pass
+
+    def _on_datos_actualizados(self, origen: str, operacion: str):
+        """
+        Coordina el refresco de los módulos afectados por una operación ya confirmada.
+
+        ``origen`` identifica al widget que emitió la señal y ``operacion`` el tipo
+        de cambio: venta, anulacion, compra, ajuste, producto o caja.
+        """
+        objetivos: set[str] = set()
+
+        if operacion == "venta":
+            objetivos.update({"ventas", "inventario", "productos", "pos", "caja", "reportes"})
+        elif operacion == "anulacion":
+            objetivos.update({"ventas", "inventario", "productos", "pos", "caja", "reportes"})
+        elif operacion == "compra":
+            objetivos.update({"compras", "inventario", "productos", "pos"})
+        elif operacion == "ajuste":
+            objetivos.update({"inventario", "productos", "pos"})
+        elif operacion == "producto":
+            objetivos.update({"productos", "inventario", "pos"})
+        elif operacion == "caja":
+            objetivos.update({"caja", "pos"})
+        else:
+            return
+
+        # El widget emisor ya se refrescó por su cuenta antes de emitir.
+        objetivos.discard(origen)
+
+        for clave in objetivos:
+            widget = self._widgets.get(clave)
+            if widget is None:
+                continue
+            try:
+                if clave == "caja" and hasattr(widget, "actualizar_caja_actual"):
+                    widget.actualizar_caja_actual()
+                elif hasattr(widget, "actualizar") and callable(widget.actualizar):
+                    widget.actualizar()
+            except Exception:
+                # Un módulo no visible no debe romper la operación ya confirmada.
+                pass
+
+        # Las alertas de stock se recalculan de inmediato, sin esperar el timer de 60 s.
+        if operacion in ("venta", "anulacion", "compra", "ajuste", "producto"):
+            try:
+                self._verificar_alertas()
+            except Exception:
+                pass
 
     def _cambiar_seccion(self, index: int):
         self.stack.setCurrentIndex(index)
@@ -488,6 +549,9 @@ class MainWindow(QMainWindow):
                 self.lbl_alertas.setText(f"⚠ {len(bajos)} producto(s) con stock bajo")
             else:
                 self.lbl_alertas.setText("")
+        except Exception:
+            # Un fallo de lectura no debe interrumpir una operación ya confirmada.
+            pass
         finally:
             session.close()
 

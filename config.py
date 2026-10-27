@@ -34,17 +34,17 @@ COMPROBANTES_DIR.mkdir(parents=True, exist_ok=True)
 # ── Identidad de Marca por Cliente (White-Label) ──────────────────────────────
 # Modifica estos valores para personalizar el sistema según el negocio del cliente:
 
-APP_NAME         = "PEKE MARKET"               # Nombre comercial del negocio
+APP_NAME         = "MT BALCERAS"               # Nombre comercial del negocio
 APP_VERSION      = "1.0.0"                     # Versión del sistema
 CURRENCY         = "Bs"                        # Símbolo de moneda (Bs, $, S/., etc.)
 
 # Lema / Eslogan comercial (se muestra en el login debajo del logo si no está vacío)
 # Ej: "CALIDAD • VARIEDAD • CONFIANZA" (deja "" para clientes sin lema)
-SLOGAN           = ""
+SLOGAN           = "CALIDAD • PRECIO • SERVICIO"
 SLOGAN_COLOR     = "#10b981"                   # Color del lema (ej. verde turquesa)
 
 # Identidad visual de la marca
-BRAND_COLOR      = "#bf1e61"                   # Color primario (ej: #bf1e61 Peke rosa, #f59e0b Balceras naranja)
+BRAND_COLOR      = "#f59e0b"                   # Color primario (ej: #bf1e61 Peke rosa, #f59e0b Balceras naranja)
 BRAND_TEXT_COLOR = ""                          # Color del texto en botones ("" = automático según contraste)
 LOGIN_BTN_TEXT   = "Ingresar al Sistema"       # Texto del botón principal de login
 LOGIN_SUBTITLE   = "Ingrese sus credenciales para continuar" # Subtítulo del login
