@@ -3,7 +3,7 @@ import calendar
 from datetime import datetime, date
 from decimal import Decimal
 
-from PyQt5.QtCore import Qt, QDate
+from PyQt5.QtCore import Qt, QDate, pyqtSignal
 from PyQt5.QtGui import QFont, QColor
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
@@ -149,12 +149,22 @@ class DetalleVentaDialog(QDialog):
 class VentasWidget(QWidget):
     """Panel de historial de ventas con filtros por Día, Mes y Año, métricas y exportación a PDF/Excel."""
 
+    datos_actualizados = pyqtSignal(str)
+
     def __init__(self, usuario: Usuario, parent=None):
         super().__init__(parent)
         self.usuario = usuario
         self.session = SessionLocal()
         self._ventas_filtradas: list[Venta] = []
         self._build_ui()
+        self._cargar_ventas()
+
+    def actualizar(self):
+        """Refresca el historial conservando los filtros y la búsqueda actuales."""
+        try:
+            self.session.expire_all()
+        except Exception:
+            pass
         self._cargar_ventas()
 
     def _build_ui(self):
@@ -606,8 +616,10 @@ class VentasWidget(QWidget):
         try:
             anular_venta(self.session, v)
             self.session.commit()
-            QMessageBox.information(self, "Éxito", "La venta fue anulada y el stock fue revertido correctamente.")
+            self.session.expire_all()
             self._cargar_ventas()
+            self.datos_actualizados.emit("anulacion")
+            QMessageBox.information(self, "Éxito", "La venta fue anulada y el stock fue revertido correctamente.")
         except Exception as e:
             self.session.rollback()
             QMessageBox.critical(self, "Error", f"No se pudo anular la venta:\n{e}")

@@ -13,10 +13,11 @@ Características:
 """
 from __future__ import annotations
 
+import os
 from decimal import Decimal
 from datetime import datetime
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QBrush
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
@@ -24,6 +25,7 @@ from PyQt5.QtWidgets import (
     QHeaderView, QDialog, QFormLayout, QComboBox,
     QDoubleSpinBox, QMessageBox, QAbstractItemView,
     QFrame, QTabWidget, QGridLayout, QScrollArea,
+    QFileDialog,
 )
 
 from database import SessionLocal
@@ -33,6 +35,10 @@ from models.usuario import Usuario
 from models.categoria import Categoria
 from models.venta import Venta, DetalleVenta
 from services.inventario_service import ajustar_stock, productos_con_stock_bajo
+from services.export_service import (
+    exportar_productos_bajo_stock_excel,
+    exportar_productos_bajo_stock_pdf,
+)
 from config import CURRENCY
 from ui.styles import PALETTE
 
@@ -202,6 +208,8 @@ class AjusteDialog(QDialog):
 class InventarioWidget(QWidget):
     """Panel de inventario, ganancias y alertas de stock con diseño ejecutivo."""
 
+    datos_actualizados = pyqtSignal(str)
+
     def __init__(self, usuario: Usuario, parent=None):
         super().__init__(parent)
         self.usuario = usuario
@@ -231,6 +239,18 @@ class InventarioWidget(QWidget):
         hdr.addLayout(titulos_box)
 
         hdr.addStretch()
+
+        btn_exp_pdf = QPushButton("📄 Exportar PDF")
+        btn_exp_pdf.setCursor(Qt.PointingHandCursor)
+        btn_exp_pdf.setToolTip("Exportar a PDF los productos con stock actual menor o igual al mínimo")
+        btn_exp_pdf.clicked.connect(self._exportar_bajo_stock_pdf)
+        hdr.addWidget(btn_exp_pdf)
+
+        btn_exp_xlsx = QPushButton("📊 Exportar Excel")
+        btn_exp_xlsx.setCursor(Qt.PointingHandCursor)
+        btn_exp_xlsx.setToolTip("Exportar a Excel (.xlsx) los productos con stock actual menor o igual al mínimo")
+        btn_exp_xlsx.clicked.connect(self._exportar_bajo_stock_excel)
+        hdr.addWidget(btn_exp_xlsx)
 
         btn_ajuste = QPushButton("+ Nuevo Ajuste de Stock")
         btn_ajuste.setObjectName("btn_primary")
@@ -645,6 +665,10 @@ class InventarioWidget(QWidget):
     # ─────────────────────────────────────────────────────────────────────────
     def actualizar(self):
         """Punto de entrada principal para recargar todos los datos y métricas."""
+        try:
+            self.session.expire_all()
+        except Exception:
+            pass
         try:
             self._cargar_categorias_combo()
             self._cargar_datos_principales()
@@ -1195,11 +1219,98 @@ class InventarioWidget(QWidget):
             it_u.setForeground(QBrush(QColor(PALETTE['text_secondary'])))
             self.tabla_ajustes.setItem(i, 5, it_u)
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # EXPORTACIÓN DE PRODUCTOS CON BAJO STOCK
+    # ─────────────────────────────────────────────────────────────────────────
+    def _productos_bajo_stock_ordenados(self) -> list[Producto]:
+        """Obtiene los productos activos con stock actual <= mínimo, ordenados por criticidad."""
+        productos = productos_con_stock_bajo(self.session)
+        productos.sort(
+            key=lambda p: (p.stock_actual > 0, p.stock_actual - p.stock_minimo, p.descripcion.lower())
+        )
+        return productos
+
+    def _exportar_bajo_stock(self, formato: str) -> None:
+        """Solicita la ruta y genera el reporte de bajo stock en PDF o Excel."""
+        try:
+            productos = self._productos_bajo_stock_ordenados()
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Error al consultar inventario",
+                f"No se pudo obtener la lista de productos con bajo stock:\n{e}",
+            )
+            return
+
+        if not productos:
+            QMessageBox.information(
+                self, "Sin productos con bajo stock",
+                "No hay productos activos cuyo stock actual sea menor o igual al stock mínimo.\n"
+                "No se generó ningún archivo.",
+            )
+            return
+
+        if formato == "pdf":
+            titulo_dialogo = "Exportar Productos con Bajo Stock a PDF"
+            filtro = "Archivos PDF (*.pdf)"
+            extension = ".pdf"
+            funcion = exportar_productos_bajo_stock_pdf
+        else:
+            titulo_dialogo = "Exportar Productos con Bajo Stock a Excel"
+            filtro = "Archivos Excel (*.xlsx)"
+            extension = ".xlsx"
+            funcion = exportar_productos_bajo_stock_excel
+
+        nombre_defecto = f"productos_bajo_stock_{datetime.now().strftime('%Y%m%d_%H%M%S')}{extension}"
+        path, _ = QFileDialog.getSaveFileName(self, titulo_dialogo, nombre_defecto, filtro)
+        if not path:
+            return
+
+        if not path.lower().endswith(extension):
+            path += extension
+
+        try:
+            funcion(productos, path)
+        except PermissionError as e:
+            QMessageBox.critical(
+                self, "Error de permisos",
+                f"No se pudo escribir el archivo en:\n{path}\n\n"
+                f"Verifique que la carpeta tenga permisos de escritura y que el archivo no esté abierto.\n\n{e}",
+            )
+            return
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Error al exportar",
+                f"No se pudo generar el reporte en {extension.upper()}:\n{e}",
+            )
+            return
+
+        res = QMessageBox.question(
+            self, "Exportación exitosa",
+            f"Se exportaron {len(productos)} producto(s) con bajo stock en:\n{path}\n\n"
+            "¿Desea abrir el archivo ahora?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if res == QMessageBox.Yes:
+            try:
+                os.startfile(path)
+            except Exception as e:
+                QMessageBox.warning(
+                    self, "No se pudo abrir el archivo",
+                    f"El archivo se generó correctamente, pero no se pudo abrir automáticamente:\n{e}",
+                )
+
+    def _exportar_bajo_stock_pdf(self) -> None:
+        self._exportar_bajo_stock("pdf")
+
+    def _exportar_bajo_stock_excel(self) -> None:
+        self._exportar_bajo_stock("excel")
+
     def _nuevo_ajuste(self, producto=None):
         """Abre el diálogo para registrar un nuevo ajuste de inventario."""
         dlg = AjusteDialog(self.session, self.usuario, producto, parent=self)
         if dlg.exec():
             self.actualizar()
+            self.datos_actualizados.emit("ajuste")
 
     def closeEvent(self, event):
         self.session.close()

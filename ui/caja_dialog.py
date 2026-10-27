@@ -26,6 +26,7 @@ from services.caja_service import (
     obtener_resumen_caja,
     cerrar_caja,
     generar_ticket_arqueo_pdf,
+    CajaYaAbiertaError,
 )
 from config import CURRENCY, APP_NAME
 from ui.styles import PALETTE, configurar_calendario_elegante
@@ -303,18 +304,19 @@ class AperturaCajaDialog(QDialog):
         root.addLayout(btn_bar)
 
     def _cargar_cajeros(self):
-        """Carga los usuarios activos y preselecciona al usuario actual."""
-        with get_session() as session:
-            usuarios = session.query(Usuario).filter(Usuario.activo == True).order_by(Usuario.nombre_completo).all()
-            self.combo_cajero.clear()
-            idx_seleccion = 0
-            for i, u in enumerate(usuarios):
-                self.combo_cajero.addItem(f"👤  {u.nombre_completo} ({u.username})", u.id)
-                if u.id == self.usuario_actual.id:
-                    idx_seleccion = i
-
-            if self.combo_cajero.count() > 0:
-                self.combo_cajero.setCurrentIndex(idx_seleccion)
+        """Muestra únicamente al usuario autenticado como propietario de la caja."""
+        self.combo_cajero.clear()
+        if self.usuario_actual and self.usuario_actual.id:
+            self.combo_cajero.addItem(
+                f"👤  {self.usuario_actual.nombre_completo} ({self.usuario_actual.username})",
+                self.usuario_actual.id,
+            )
+            self.combo_cajero.setCurrentIndex(0)
+            self.combo_cajero.setEnabled(False)
+            self.combo_cajero.setToolTip(
+                "Cada usuario abre únicamente su propia caja. "
+                "La supervisión de cajas ajenas se realiza desde el historial."
+            )
 
     def _cancelar(self):
         """Limpia los campos a valores por defecto."""
@@ -339,9 +341,13 @@ class AperturaCajaDialog(QDialog):
             self.input_total_bs.setFocus()
             return
 
-        usuario_id = self.combo_cajero.currentData()
+        usuario_id = getattr(self.usuario_actual, "id", None)
         if not usuario_id:
-            QMessageBox.warning(self, "Cajero Requerido", "Debe seleccionar un cajero.")
+            QMessageBox.warning(
+                self,
+                "Usuario Requerido",
+                "No se pudo identificar al usuario autenticado para abrir la caja.",
+            )
             return
 
         turno = self.combo_turno.currentData() or self.combo_turno.currentText()
@@ -370,6 +376,24 @@ class AperturaCajaDialog(QDialog):
                 parent=self,
             )
             dlg_exito.exec_()
+            self.accept()
+        except CajaYaAbiertaError as e:
+            caja = e.cajas[0]
+            if len(e.cajas) == 1:
+                mensaje = (
+                    f"Ya tienes una caja abierta (#{caja.id}, turno {caja.turno}).\n\n"
+                    "No se abrió una nueva caja. Puedes continuar trabajando con la existente."
+                )
+            else:
+                ids = ", ".join(f"#{c.id}" for c in e.cajas)
+                mensaje = (
+                    f"Se detectaron {len(e.cajas)} cajas abiertas para tu usuario: {ids}.\n\n"
+                    f"No se abrió una nueva. Se utilizará la más reciente (#{caja.id}).\n\n"
+                    "Por seguridad, cierra las cajas adicionales desde el historial antes de continuar. "
+                    "El sistema no cierra ni modifica cajas automáticamente."
+                )
+            QMessageBox.information(self, "Caja ya abierta", mensaje)
+            self.sesion_creada = caja
             self.accept()
         except Exception as e:
             QMessageBox.critical(self, "Error al Abrir Caja", f"No se pudo registrar la apertura de caja:\n{e}")
@@ -830,9 +854,10 @@ class CierreCajaDialog(QDialog):
     tipografía de alta legibilidad y prevención de compresión de texto.
     """
 
-    def __init__(self, sesion_caja_id: int, parent=None):
+    def __init__(self, sesion_caja_id: int, usuario: Usuario, parent=None):
         super().__init__(parent)
         self.sesion_caja_id = sesion_caja_id
+        self.usuario = usuario
         self.resumen: dict = {}
         self.diferencia = Decimal("0.00")
         self.cierre_completado = False
@@ -1266,7 +1291,13 @@ class CierreCajaDialog(QDialog):
 
         try:
             with get_session() as session:
-                cerrar_caja(session, self.sesion_caja_id, monto_fisico, obs)
+                cerrar_caja(
+                    session,
+                    self.sesion_caja_id,
+                    monto_fisico,
+                    obs,
+                    usuario_id=self.usuario.id,
+                )
                 pdf_path = generar_ticket_arqueo_pdf(session, self.sesion_caja_id)
 
             self.cierre_completado = True

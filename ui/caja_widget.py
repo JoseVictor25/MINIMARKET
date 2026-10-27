@@ -8,7 +8,7 @@ import os
 from decimal import Decimal
 from pathlib import Path
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QTableWidget, QTableWidgetItem,
@@ -21,9 +21,10 @@ from database import SessionLocal, get_session
 from models.caja import SesionCaja
 from models.usuario import Usuario
 from services.caja_service import (
-    obtener_caja_activa,
     obtener_resumen_caja,
     generar_ticket_arqueo_pdf,
+    cajas_abiertas,
+    cajas_abiertas_usuario,
 )
 from ui.caja_dialog import AperturaCajaDialog, CierreCajaDialog
 from config import CURRENCY
@@ -32,6 +33,8 @@ from ui.styles import PALETTE
 
 class CajaWidget(QWidget):
     """Panel de gestión de sesiones de caja y arqueos."""
+
+    datos_actualizados = pyqtSignal(str)
 
     def __init__(self, usuario: Usuario, parent=None):
         super().__init__(parent)
@@ -123,6 +126,10 @@ class CajaWidget(QWidget):
         self._render_caja_actual()
         self._cargar_historial()
 
+    def actualizar_caja_actual(self):
+        """Refresca solo la tarjeta de la caja propia, sin recalcular el historial."""
+        self._render_caja_actual()
+
     def _render_caja_actual(self):
         # Limpiar completamente cualquier widget previo dentro de card_actual
         for child in self.card_actual.findChildren(QWidget):
@@ -145,10 +152,13 @@ class CajaWidget(QWidget):
 
         es_admin = self.usuario.es_admin()
         with get_session() as session:
-            # Buscar primero la caja del usuario actual; si no tiene y es admin, supervisar la caja general
-            caja = obtener_caja_activa(session, self.usuario.id)
-            if not caja and es_admin and not self.usuario.tiene_rol("cajero"):
-                caja = obtener_caja_activa(session)
+            # La caja operativa es SIEMPRE la del usuario autenticado.
+            # Las cajas ajenas solo se consultan para supervisión (admin).
+            propias = cajas_abiertas_usuario(session, self.usuario.id)
+            caja = propias[0] if propias else None
+            ajenas = []
+            if es_admin:
+                ajenas = [c for c in cajas_abiertas(session) if c.usuario_id != self.usuario.id]
 
             if not caja:
                 # Caja cerrada
@@ -161,9 +171,9 @@ class CajaWidget(QWidget):
                 lbl_ico.setStyleSheet("font-size: 34px;")
                 v_box.addWidget(lbl_ico)
 
-                lbl_msg = QLabel("No hay una sesión de caja abierta en este momento.")
+                lbl_msg = QLabel("No tienes una caja abierta en este momento.")
                 lbl_sub = QLabel(
-                    "Abra su turno de caja para registrar movimientos y cobrar en el Punto de Venta."
+                    "Abre tu propia caja para registrar movimientos y cobrar en el Punto de Venta."
                 )
 
                 lbl_msg.setAlignment(Qt.AlignCenter)
@@ -199,6 +209,17 @@ class CajaWidget(QWidget):
                 btn_container.setAlignment(Qt.AlignCenter)
                 btn_container.addWidget(btn_abrir)
                 v_box.addLayout(btn_container)
+
+                if ajenas:
+                    ids_ajenas = ", ".join(f"#{c.id}" for c in ajenas)
+                    lbl_sup = QLabel(
+                        f"👁️ Supervisión: hay {len(ajenas)} caja(s) abierta(s) de otros usuarios ({ids_ajenas}). "
+                        "No son operables desde esta sesión."
+                    )
+                    lbl_sup.setAlignment(Qt.AlignCenter)
+                    lbl_sup.setWordWrap(True)
+                    lbl_sup.setStyleSheet(f"color: {PALETTE['text_secondary']}; font-size: 12px;")
+                    v_box.addWidget(lbl_sup)
 
                 self.lay_actual.addLayout(v_box)
             else:
@@ -256,30 +277,57 @@ class CajaWidget(QWidget):
                     }}
                     QPushButton:hover {{ background: #dc2626; }}
                 """)
-                btn_cerrar.clicked.connect(lambda: self._cerrar_caja_dialog(caja.id))
-                top_fila.addWidget(btn_cerrar)
-
-                if caja.usuario_id != self.usuario.id:
-                    btn_mi_caja = QPushButton("🔓 Abrir Mi Caja de Turno")
-                    btn_mi_caja.setFixedHeight(36)
-                    btn_mi_caja.setCursor(Qt.PointingHandCursor)
-                    btn_mi_caja.setStyleSheet("""
-                        QPushButton {
-                            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                stop:0 #059669, stop:1 #047857);
-                            color: white;
-                            font-size: 13px;
-                            font-weight: bold;
-                            border: 1px solid #34d399;
-                            border-radius: 6px;
-                            padding: 4px 14px;
-                        }
-                        QPushButton:hover { background: #10b981; }
-                    """)
-                    btn_mi_caja.clicked.connect(self._abrir_caja_dialog)
-                    top_fila.addWidget(btn_mi_caja)
-
                 self.lay_actual.addLayout(top_fila)
+
+                if len(propias) > 1:
+                    ids_dup = ", ".join(f"#{c.id}" for c in propias)
+                    lbl_dup = QLabel(
+                        f"⚠️ Se detectaron {len(propias)} cajas abiertas para tu usuario ({ids_dup}). "
+                        f"Se opera con la más reciente (#{caja.id}). "
+                        "El sistema no las modifica automáticamente: revísalas y ciérralas una por una con su arqueo."
+                    )
+                    lbl_dup.setWordWrap(True)
+                    lbl_dup.setStyleSheet(
+                        f"color: {PALETTE['warning']}; font-size: 12px; "
+                        f"background: rgba(245, 158, 11, 0.12); border: 1px solid {PALETTE['warning']}; "
+                        "border-radius: 6px; padding: 6px 8px;"
+                    )
+                    self.lay_actual.addWidget(lbl_dup)
+
+                    btn_dup = QPushButton("🧹 Revisar y cerrar cajas adicionales")
+                    btn_dup.setCursor(Qt.PointingHandCursor)
+                    btn_dup.setFixedHeight(32)
+                    btn_dup.setStyleSheet(f"""
+                        QPushButton {{
+                            background: {PALETTE['bg_hover']};
+                            color: {PALETTE['warning']};
+                            border: 1px solid {PALETTE['warning']};
+                            border-radius: 6px;
+                            padding: 4px 12px;
+                            font-size: 12px;
+                            font-weight: bold;
+                        }}
+                        QPushButton:hover {{ color: white; background: {PALETTE['bg_surface']}; }}
+                    """)
+                    ids_adicionales = [c.id for c in propias[1:]]
+                    btn_dup.clicked.connect(
+                        lambda: self._cerrar_cajas_adicionales(ids_adicionales)
+                    )
+                    fila_dup = QHBoxLayout()
+                    fila_dup.addStretch()
+                    fila_dup.addWidget(btn_dup)
+                    fila_dup.addStretch()
+                    self.lay_actual.addLayout(fila_dup)
+
+                if ajenas:
+                    ids_ajenas = ", ".join(f"#{c.id}" for c in ajenas)
+                    lbl_sup = QLabel(
+                        f"👁️ Supervisión: {len(ajenas)} caja(s) abierta(s) de otros usuarios ({ids_ajenas}). "
+                        "Solo consulta; no se pueden operar ni cerrar desde aquí."
+                    )
+                    lbl_sup.setWordWrap(True)
+                    lbl_sup.setStyleSheet(f"color: {PALETTE['text_secondary']}; font-size: 12px;")
+                    self.lay_actual.addWidget(lbl_sup)
 
                 # Bloques con cifras destacadas
                 chips_lay = QHBoxLayout()
@@ -391,11 +439,25 @@ class CajaWidget(QWidget):
         dlg = AperturaCajaDialog(self.usuario, self)
         if dlg.exec() == QDialog.Accepted:
             self.actualizar()
+            self.datos_actualizados.emit("caja")
 
     def _cerrar_caja_dialog(self, sesion_id: int):
-        dlg = CierreCajaDialog(sesion_id, self)
+        dlg = CierreCajaDialog(sesion_id, self.usuario, self)
         if dlg.exec() == QDialog.Accepted:
             self.actualizar()
+            self.datos_actualizados.emit("caja")
+
+    def _cerrar_cajas_adicionales(self, ids: list[int]):
+        """Cierra, una por una y con arqueo explícito, cajas adicionales del mismo dueño."""
+        cerrada_alguna = False
+        for sesion_id in list(ids):
+            dlg = CierreCajaDialog(sesion_id, self.usuario, self)
+            if dlg.exec() != QDialog.Accepted:
+                break
+            cerrada_alguna = True
+        if cerrada_alguna:
+            self.actualizar()
+            self.datos_actualizados.emit("caja")
 
     def _imprimir_arqueo(self, sesion_id: int):
         try:

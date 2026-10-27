@@ -44,10 +44,13 @@ def main():
     if args.user or args.rol:
         from database import SessionLocal
         from models.usuario import Usuario
+        from services.usuario_service import usuario_unico_por_username
         s = SessionLocal()
         try:
             if args.user:
-                auto_usuario = s.query(Usuario).filter_by(username=args.user, activo=True).first()
+                # Mismo criterio que el login: no distingue mayúsculas/minúsculas.
+                # Si el username es ambiguo, no se auto-inicia sesión.
+                auto_usuario = usuario_unico_por_username(s, args.user)
             elif args.rol:
                 auto_usuario = s.query(Usuario).filter_by(rol=args.rol, activo=True).first()
             if auto_usuario:

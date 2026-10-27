@@ -7,6 +7,7 @@ import re
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
@@ -24,16 +25,76 @@ if TYPE_CHECKING:
 THERMAL_WIDTH = 80 * mm
 
 
-def obtener_caja_activa(session: Session, usuario_id: int | None = None) -> SesionCaja | None:
+class CajaYaAbiertaError(Exception):
+    """Se lanza cuando el usuario ya tiene una caja abierta.
+
+    Guarda una instantánea de datos primitivos (no objetos ORM) para que la
+    interfaz pueda informar el conflicto incluso después de cerrar la sesión.
     """
-    Obtiene la sesión de caja actualmente abierta.
-    Si se pasa usuario_id, busca exclusivamente la caja abierta por ese usuario.
-    Si usuario_id es None, devuelve la caja abierta más reciente en el sistema.
+
+    def __init__(self, cajas: list[SesionCaja]):
+        self.cajas = [
+            SimpleNamespace(
+                id=c.id,
+                turno=c.turno,
+                usuario_id=c.usuario_id,
+                monto_inicial_bs=c.monto_inicial_bs,
+            )
+            for c in cajas
+        ]
+        ids = ", ".join(f"#{c.id}" for c in self.cajas)
+        super().__init__(
+            f"El usuario ya tiene {len(self.cajas)} caja(s) abierta(s): {ids}. "
+            "Debe continuar con la caja existente o cerrarla antes de abrir otra."
+        )
+
+
+class CajaNoAutorizadaError(Exception):
+    """Se lanza cuando un usuario intenta operar una caja que no le pertenece."""
+
+
+def cajas_abiertas_usuario(session: Session, usuario_id: int) -> list[SesionCaja]:
+    """Retorna las cajas abiertas de un usuario, de la más reciente a la más antigua."""
+    return (
+        session.query(SesionCaja)
+        .filter(
+            SesionCaja.estado == SesionCaja.ESTADO_ABIERTA,
+            SesionCaja.usuario_id == usuario_id,
+        )
+        .order_by(SesionCaja.id.desc())
+        .all()
+    )
+
+
+def cajas_abiertas(session: Session) -> list[SesionCaja]:
+    """Retorna todas las cajas abiertas del sistema (consulta de supervisión)."""
+    return (
+        session.query(SesionCaja)
+        .filter(SesionCaja.estado == SesionCaja.ESTADO_ABIERTA)
+        .order_by(SesionCaja.id.desc())
+        .all()
+    )
+
+
+def obtener_caja_activa(session: Session, usuario_id: int) -> SesionCaja | None:
     """
-    query = session.query(SesionCaja).filter(SesionCaja.estado == SesionCaja.ESTADO_ABIERTA)
-    if usuario_id is not None:
-        query = query.filter(SesionCaja.usuario_id == usuario_id)
-    return query.order_by(SesionCaja.id.desc()).first()
+    Obtiene la caja operativa de un usuario.
+
+    Siempre filtra por usuario y estado abierto. No existe una búsqueda
+    implícita de la caja de otro usuario: para supervisión administrativa
+    deben usarse explícitamente cajas_abiertas() o cajas_abiertas_usuario().
+    """
+    if usuario_id is None:
+        raise ValueError("obtener_caja_activa requiere el usuario_id del propietario.")
+    return (
+        session.query(SesionCaja)
+        .filter(
+            SesionCaja.estado == SesionCaja.ESTADO_ABIERTA,
+            SesionCaja.usuario_id == usuario_id,
+        )
+        .order_by(SesionCaja.id.desc())
+        .first()
+    )
 
 
 def abrir_caja(
@@ -45,8 +106,15 @@ def abrir_caja(
     observacion: str | None = None,
 ) -> SesionCaja:
     """
-    Abre una nueva sesión de caja.
+    Abre una nueva sesión de caja para un usuario.
+
+    Regla de negocio: un usuario no puede tener más de una caja abierta.
+    No se cierran ni modifican cajas existentes automáticamente.
     """
+    existentes = cajas_abiertas_usuario(session, usuario_id)
+    if existentes:
+        raise CajaYaAbiertaError(existentes)
+
     monto_dec = Decimal(str(monto_inicial_bs or "0.00"))
 
     nueva_caja = SesionCaja(
@@ -113,6 +181,7 @@ def obtener_resumen_caja(session: Session, sesion_caja_id: int) -> dict:
 
     return {
         "sesion_id": sesion.id,
+        "usuario_id": sesion.usuario_id,
         "usuario_nombre": sesion.usuario.nombre_completo if sesion.usuario else "Desconocido",
         "usuario_username": sesion.usuario.username if sesion.usuario else "",
         "turno": sesion.turno,
@@ -135,13 +204,26 @@ def cerrar_caja(
     sesion_caja_id: int,
     monto_fisico_bs: Decimal | float | str,
     observacion: str | None = None,
+    *,
+    usuario_id: int,
 ) -> tuple[SesionCaja, dict]:
     """
     Cierra la sesión de caja registrando el arqueo físico y calculando sobrante/faltante.
+
+    Solo el propietario de la caja puede cerrarla. No se implementa cierre
+    forzado de cajas ajenas desde el flujo normal.
     """
     sesion = session.get(SesionCaja, sesion_caja_id)
     if not sesion:
         raise ValueError(f"No existe sesión de caja #{sesion_caja_id}")
+    if usuario_id is None:
+        raise CajaNoAutorizadaError("Se requiere el usuario autenticado para cerrar una caja.")
+    if sesion.usuario_id != usuario_id:
+        raise CajaNoAutorizadaError(
+            f"La caja #{sesion_caja_id} pertenece a otro usuario y no puede cerrarse desde este flujo."
+        )
+    if sesion.estado != SesionCaja.ESTADO_ABIERTA:
+        raise ValueError(f"La caja #{sesion_caja_id} no está abierta.")
 
     resumen = obtener_resumen_caja(session, sesion_caja_id)
     monto_fisico_dec = Decimal(str(monto_fisico_bs or "0.00"))
