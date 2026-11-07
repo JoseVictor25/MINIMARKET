@@ -10,13 +10,21 @@ from PyQt5.QtWidgets import (
     QLineEdit, QPushButton, QTableWidget, QTableWidgetItem,
     QHeaderView, QMessageBox, QAbstractItemView, QSplitter,
     QFrame, QDialog, QScrollArea, QComboBox, QDateEdit, QFileDialog,
+    QFormLayout,
 )
 
 from database import SessionLocal
 from models.venta import Venta
 from models.usuario import Usuario
-from services.venta_service import anular_venta
-from services.ticket_service import generar_ticket_pdf
+from models.caja import SesionCaja
+from services.venta_service import (
+    anular_venta,
+    cambiar_metodo_pago,
+    PermisoDenegadoError,
+    VentaNoEditableError,
+)
+from services.ticket_service import generar_ticket_pdf, construir_layout_ticket
+from services.print_service import imprimir_layout
 from services.export_service import exportar_ventas_excel, exportar_ventas_pdf
 from config import CURRENCY, APP_NAME
 from ui.styles import PALETTE, configurar_calendario_elegante
@@ -79,13 +87,32 @@ class DetalleVentaDialog(QDialog):
                 qr_extra += f" &nbsp;|&nbsp; <b>Ref:</b> {v.referencia_pago}"
 
         obs_html = f"<br><b>Detalle pago:</b> {v.observacion}" if v.observacion else ""
+
+        audit_html = ""
+        fecha_ed = getattr(v, "fecha_edicion", None)
+        if fecha_ed:
+            editor = None
+            try:
+                editor = v.editado_por.username if getattr(v, "editado_por", None) else None
+            except Exception:
+                editor = None
+            if not editor:
+                editor = f"ID {v.editado_por_id}" if getattr(v, "editado_por_id", None) else "administrador"
+            original = getattr(v, "metodo_pago_original", None) or "?"
+            audit_html = (
+                f"<br><b>Método editado:</b> {original.capitalize()} → {v.metodo_pago.capitalize()}"
+                f" por {editor} el {fecha_ed.strftime('%d/%m/%Y %H:%M')}"
+            )
+            if getattr(v, "motivo_edicion", None):
+                audit_html += f"<br><b>Motivo:</b> {v.motivo_edicion}"
+
         info = (
             f"<b>Transacción:</b> #{v.numero_transaccion} &nbsp;&nbsp; "
             f"<b>Fecha:</b> {v.fecha.strftime('%d/%m/%Y %H:%M')}<br>"
             f"<b>Estado:</b> <span style='color:{'#22c55e' if v.estado == 'completada' else '#ef4444'}; font-weight: bold;'>{v.estado.upper()}</span><br>"
             f"<b>Cajero:</b> {v.usuario.username if v.usuario else '-'}<br>"
             f"<b>Cliente:</b> {v.cliente.razon_social + ' (' + v.cliente.nit + ')' if v.cliente else 'Sin cliente'}<br>"
-            f"<b>Método de pago:</b> {metodo_desc}{qr_extra}{obs_html}"
+            f"<b>Método de pago:</b> {metodo_desc}{qr_extra}{obs_html}{audit_html}"
         )
         lbl_info = QLabel(info)
         lbl_info.setTextFormat(Qt.RichText)
@@ -144,6 +171,97 @@ class DetalleVentaDialog(QDialog):
         btn_close = QPushButton("Cerrar")
         btn_close.clicked.connect(self.accept)
         lay.addWidget(btn_close)
+
+
+class EditarMetodoPagoDialog(QDialog):
+    """Permite a un administrador corregir el método de pago de una venta."""
+
+    def __init__(self, venta: Venta, bloqueada: bool = False,
+                 motivo_bloqueo: str = "", parent=None):
+        super().__init__(parent)
+        self.venta = venta
+        self._bloqueada = bloqueada
+        self.setWindowTitle(f"Editar método de pago · Venta #{venta.numero_transaccion}")
+        self.setMinimumWidth(440)
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        self._build_ui(motivo_bloqueo)
+
+    def _build_ui(self, motivo_bloqueo: str):
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(22, 20, 22, 20)
+        lay.setSpacing(14)
+
+        titulo = QLabel("✏ Corregir método de pago")
+        titulo.setStyleSheet("font-size: 16px; font-weight: bold;")
+        lay.addWidget(titulo)
+
+        actual = "Mixto (QR + Efectivo)" if self.venta.metodo_pago == "mixto" else self.venta.metodo_pago.capitalize()
+        lbl_actual = QLabel(
+            f"Venta #{self.venta.numero_transaccion} · "
+            f"Total {CURRENCY} {self.venta.total_bs:.2f}\n"
+            f"Método actual: {actual}"
+        )
+        lbl_actual.setStyleSheet("font-size: 13px;")
+        lay.addWidget(lbl_actual)
+
+        form = QFormLayout()
+        form.setSpacing(10)
+
+        self.combo_metodo = QComboBox()
+        self.combo_metodo.setFixedHeight(36)
+        opciones = [
+            ("Efectivo", "efectivo"),
+            ("Tarjeta", "tarjeta"),
+            ("Transferencia", "transferencia"),
+            ("QR", "qr"),
+        ]
+        for texto, valor in opciones:
+            self.combo_metodo.addItem(texto, valor)
+        idx = self.combo_metodo.findData((self.venta.metodo_pago or "").lower())
+        if idx >= 0:
+            self.combo_metodo.setCurrentIndex(idx)
+        form.addRow("Nuevo método:", self.combo_metodo)
+
+        self.input_motivo = QLineEdit()
+        self.input_motivo.setFixedHeight(36)
+        self.input_motivo.setPlaceholderText("Motivo del cambio (recomendado)")
+        form.addRow("Motivo:", self.input_motivo)
+        lay.addLayout(form)
+
+        if self._bloqueada:
+            aviso = QLabel(f"⚠ {motivo_bloqueo}")
+            aviso.setWordWrap(True)
+            aviso.setStyleSheet(
+                f"color: {PALETTE['danger']}; font-weight: bold; "
+                f"background: rgba(239, 68, 68, 0.12); border: 1px solid {PALETTE['danger']}; "
+                "border-radius: 8px; padding: 10px;"
+            )
+            lay.addWidget(aviso)
+
+        botones = QHBoxLayout()
+        botones.addStretch()
+        btn_cancelar = QPushButton("Cancelar")
+        btn_cancelar.setFixedHeight(38)
+        btn_cancelar.clicked.connect(self.reject)
+        botones.addWidget(btn_cancelar)
+
+        self.btn_guardar = QPushButton("Guardar cambio")
+        self.btn_guardar.setFixedHeight(38)
+        self.btn_guardar.setDefault(True)
+        self.btn_guardar.setEnabled(not self._bloqueada)
+        self.btn_guardar.setStyleSheet(
+            f"background: {PALETTE['accent']}; color: white; font-weight: bold; "
+            "border: none; border-radius: 8px; padding: 0 18px;"
+        )
+        self.btn_guardar.clicked.connect(self.accept)
+        botones.addWidget(self.btn_guardar)
+        lay.addLayout(botones)
+
+    def datos(self) -> tuple[str, str]:
+        return (
+            self.combo_metodo.currentData(),
+            self.input_motivo.text().strip(),
+        )
 
 
 class VentasWidget(QWidget):
@@ -371,6 +489,50 @@ class VentasWidget(QWidget):
         btn_ticket.clicked.connect(self._reimprimir)
         btn_row.addWidget(btn_ticket)
 
+        btn_imprimir = QPushButton("🖨 Imprimir Directo")
+        btn_imprimir.setFixedHeight(34)
+        btn_imprimir.setCursor(Qt.PointingHandCursor)
+        btn_imprimir.setStyleSheet("""
+            QPushButton {
+                background-color: #1e293b;
+                color: #34d399;
+                border: 1px solid #059669;
+                border-radius: 6px;
+                padding: 0 16px;
+                font-weight: 600;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background-color: #059669;
+                color: #ffffff;
+            }
+        """)
+        btn_imprimir.clicked.connect(self._imprimir)
+        btn_row.addWidget(btn_imprimir)
+
+        btn_editar_pago = QPushButton("✏ Editar Pago")
+        btn_editar_pago.setFixedHeight(34)
+        btn_editar_pago.setCursor(Qt.PointingHandCursor)
+        btn_editar_pago.setStyleSheet("""
+            QPushButton {
+                background-color: #1e293b;
+                color: #fbbf24;
+                border: 1px solid #d97706;
+                border-radius: 6px;
+                padding: 0 16px;
+                font-weight: 600;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background-color: #d97706;
+                color: #ffffff;
+            }
+        """)
+        btn_editar_pago.clicked.connect(self._editar_metodo_pago)
+        btn_row.addWidget(btn_editar_pago)
+        if not self.usuario.es_admin():
+            btn_editar_pago.hide()
+
         btn_anular = QPushButton("✗ Anular Venta")
         btn_anular.setObjectName("btn_danger")
         btn_anular.setFixedHeight(34)
@@ -594,6 +756,86 @@ class VentasWidget(QWidget):
             os.startfile(str(pdf))
         except Exception as e:
             QMessageBox.critical(self, "Error", f"No se pudo generar el ticket:\n{e}")
+
+    def _imprimir(self):
+        """Imprime el ticket de la venta seleccionada directamente con QPrinter."""
+        v = self._get_venta_seleccionada()
+        if not v:
+            QMessageBox.information(self, "Seleccionar", "Haga clic en una venta para imprimir su ticket.")
+            return
+        try:
+            layout = construir_layout_ticket(v)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"No se pudo preparar el ticket:\n{e}")
+            return
+        try:
+            imprimir_layout(layout, self)
+        except Exception as e:
+            QMessageBox.critical(self, "Error de impresión", f"No se pudo imprimir el ticket:\n{e}")
+
+    def _editar_metodo_pago(self):
+        """Permite al administrador corregir el método de pago de una venta."""
+        if not self.usuario.es_admin():
+            QMessageBox.warning(
+                self, "Permiso denegado",
+                "Solo un administrador puede cambiar el método de pago de una venta.",
+            )
+            return
+
+        v = self._get_venta_seleccionada()
+        if not v:
+            QMessageBox.information(
+                self, "Seleccionar",
+                "Haga clic en una venta para cambiar su método de pago.",
+            )
+            return
+
+        bloqueada = False
+        motivo_bloqueo = ""
+        if v.estado != Venta.ESTADO_COMPLETADA:
+            bloqueada = True
+            motivo_bloqueo = "Solo se pueden editar ventas con estado 'completada'."
+        elif v.sesion_caja_id:
+            sesion_caja = self.session.get(SesionCaja, v.sesion_caja_id)
+            if sesion_caja is None:
+                bloqueada = True
+                motivo_bloqueo = "La venta está vinculada a una caja que ya no existe."
+            elif sesion_caja.estado != SesionCaja.ESTADO_ABIERTA:
+                bloqueada = True
+                motivo_bloqueo = (
+                    "La venta pertenece a una caja cerrada. "
+                    "No se puede modificar su método de pago."
+                )
+
+        dlg = EditarMetodoPagoDialog(
+            v, bloqueada=bloqueada, motivo_bloqueo=motivo_bloqueo, parent=self
+        )
+        if dlg.exec_() != QDialog.Accepted:
+            return
+
+        nuevo, motivo = dlg.datos()
+        try:
+            cambiar_metodo_pago(self.session, v, nuevo, self.usuario, motivo)
+            self.session.commit()
+        except (PermisoDenegadoError, VentaNoEditableError, ValueError) as e:
+            self.session.rollback()
+            QMessageBox.warning(self, "No se pudo editar", str(e))
+            return
+        except Exception as e:
+            self.session.rollback()
+            QMessageBox.critical(
+                self, "Error",
+                f"No se pudo cambiar el método de pago:\n{e}",
+            )
+            return
+
+        QMessageBox.information(
+            self, "Método actualizado",
+            f"La venta #{v.numero_transaccion} ahora está registrada como "
+            f"'{nuevo.capitalize()}'.",
+        )
+        self._cargar_ventas()
+        self.datos_actualizados.emit("venta")
 
     def _anular(self):
         v = self._get_venta_seleccionada()

@@ -67,13 +67,20 @@ class Venta(Base):
     referencia_pago: Mapped[str | None] = mapped_column(String(100), nullable=True, default=None)
     comprobante_pago: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
 
+    # Auditoría de edición del método de pago (solo administradores)
+    metodo_pago_original: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    motivo_edicion: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    fecha_edicion: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    editado_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+
     # FK
     usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), nullable=False)
     cliente_id: Mapped[int | None] = mapped_column(ForeignKey("clientes.id"), nullable=True)
     sesion_caja_id: Mapped[int | None] = mapped_column(ForeignKey("sesiones_caja.id"), nullable=True)
 
     # Relaciones
-    usuario = relationship("Usuario", back_populates="ventas")
+    usuario = relationship("Usuario", back_populates="ventas", foreign_keys=[usuario_id])
+    editado_por = relationship("Usuario", foreign_keys=[editado_por_id])
     cliente = relationship("Cliente", back_populates="ventas")
     sesion_caja = relationship("SesionCaja", back_populates="ventas")
     detalles = relationship("DetalleVenta", back_populates="venta", cascade="all, delete-orphan")

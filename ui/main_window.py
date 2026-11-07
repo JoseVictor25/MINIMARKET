@@ -11,14 +11,14 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QListWidget, QListWidgetItem, QStackedWidget,
     QLabel, QPushButton, QStatusBar, QFrame,
-    QMessageBox, QFileDialog, QDialog,
+    QMessageBox, QFileDialog, QDialog, QScrollArea, QSizePolicy, QLayout,
 )
 from PyQt5.QtGui import QFont, QIcon, QPixmap
 
 from config import APP_NAME, APP_VERSION, DB_PATH
 from models.usuario import Usuario
 from services.ticket_service import respaldar_base_de_datos
-from services.inventario_service import productos_con_stock_bajo
+from services.inventario_service import productos_con_stock_bajo, contar_productos_stock_bajo
 from database import SessionLocal
 from ui.styles import PALETTE
 
@@ -268,6 +268,7 @@ class MainWindow(QMainWindow):
         self.solicito_cerrar_sesion = False
         self._timer_alertas = None
         self._widgets: dict[str, QWidget] = {}
+        self._ancho_sidebar = 220
         self._build_ui()
         self._iniciar_alertas_timer()
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
@@ -281,27 +282,38 @@ class MainWindow(QMainWindow):
             | Qt.WindowCloseButtonHint
         )
 
-        # El tamaño de restauración (cuando el usuario des-maximiza) será 1280x760 centrado
-        # Esto lo fija el sistema operativo automáticamente; no hacer resize/move manual aquí
-        # porque interfiere con showMaximized() y da la apariencia de "falso maximizado"
+        # ── Tamaño de restauración responsive ────────────────────────────────
+        # La ventana se abre maximizada desde main.py. Este tamaño solo se usa
+        # cuando el usuario la restaura o la arrastra. Se calcula a partir del
+        # área útil real de la pantalla para que nunca quede más grande que ella.
         screen = QApplication.primaryScreen()
         if screen:
             geo = screen.availableGeometry()
-            # Sólo fijar el tamaño de restauración, no la posición
-            self.resize(min(1280, geo.width()), min(760, geo.height()))
+            min_w = max(640, min(960, geo.width()))
+            min_h = max(480, min(560, geo.height()))
+            self.setMinimumSize(min_w, min_h)
+            self.resize(
+                max(min_w, min(1280, int(geo.width() * 0.92))),
+                max(min_h, min(800, int(geo.height() * 0.92))),
+            )
 
     def _build_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
+        central.setMinimumSize(0, 0)
         root = QHBoxLayout(central)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
+        # Permite que la ventana se encoja por debajo del tamaño "ideal" del
+        # contenido. Los módulos usan QScrollArea para que nada quede cortado.
+        root.setSizeConstraint(QLayout.SetNoConstraint)
 
         es_admin = self.usuario.es_admin()
 
         # ── Barra lateral ─────────────────────────────────────────────────────
         sidebar_container = QFrame()
-        sidebar_container.setFixedWidth(220)
+        self.sidebar_container = sidebar_container
+        sidebar_container.setFixedWidth(self._ancho_sidebar)
         sidebar_container.setStyleSheet(
             f"background: {PALETTE['bg_surface']}; "
             f"border-right: 1px solid {PALETTE['border']};"
@@ -430,10 +442,14 @@ class MainWindow(QMainWindow):
 
         # ── Área de contenido ─────────────────────────────────────────────────
         self.stack = QStackedWidget()
+        self.stack.setMinimumSize(0, 0)
+        self.stack.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         root.addWidget(self.stack, 1)
 
         # Crear los widgets correspondientes a las secciones visibles del rol
         claves = [s[1] for s in secciones_visibles]
+        self._claves = claves
+        self._paginas: dict[str, QScrollArea] = {}
         constructores = {
             "pos":        lambda: POSWidget(self.usuario),
             "caja":       lambda: CajaWidget(self.usuario),
@@ -448,7 +464,9 @@ class MainWindow(QMainWindow):
         for clave in claves:
             w = constructores[clave]()
             self._widgets[clave] = w
-            self.stack.addWidget(w)
+            pagina = self._crear_pagina_scroll(w)
+            self._paginas[clave] = pagina
+            self.stack.addWidget(pagina)
 
         self._conectar_senales_actualizacion()
 
@@ -460,11 +478,29 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self.status)
         self.lbl_status = QLabel(f"Sistema listo  |  DB: {DB_PATH}")
         self.lbl_status.setStyleSheet(f"color: {PALETTE['text_muted']};")
+        self.lbl_status.setMinimumWidth(0)
+        self.lbl_status.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         self.status.addWidget(self.lbl_status)
 
         self.lbl_alertas = QLabel("")
         self.lbl_alertas.setStyleSheet(f"color: {PALETTE['warning']}; font-weight: bold;")
         self.status.addPermanentWidget(self.lbl_alertas)
+
+    def _crear_pagina_scroll(self, widget: QWidget) -> QScrollArea:
+        """
+        Envuelve un módulo en un QScrollArea para que, en pantallas pequeñas,
+        el contenido se pueda desplazar en lugar de quedar recortado.
+        """
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        scroll.viewport().setAutoFillBackground(False)
+        scroll.setWidget(widget)
+        return scroll
 
     def _conectar_senales_actualizacion(self):
         """Conecta la señal común de todos los módulos con el coordinador central."""
@@ -526,9 +562,12 @@ class MainWindow(QMainWindow):
                 pass
 
     def _cambiar_seccion(self, index: int):
+        if not self._claves or index < 0 or index >= len(self._claves):
+            return
         self.stack.setCurrentIndex(index)
-        widget = self.stack.currentWidget()
-        if hasattr(widget, "actualizar") and callable(widget.actualizar):
+        clave = self._claves[index]
+        widget = self._widgets.get(clave)
+        if widget is not None and hasattr(widget, "actualizar") and callable(widget.actualizar):
             try:
                 widget.actualizar()
             except Exception:
@@ -544,9 +583,11 @@ class MainWindow(QMainWindow):
     def _verificar_alertas(self):
         session = SessionLocal()
         try:
-            bajos = productos_con_stock_bajo(session)
+            # Solo se necesita el conteo: evita cargar todos los productos
+            # en memoria cada minuto (equipos con 4 GB de RAM).
+            bajos = contar_productos_stock_bajo(session)
             if bajos:
-                self.lbl_alertas.setText(f"⚠ {len(bajos)} producto(s) con stock bajo")
+                self.lbl_alertas.setText(f"⚠ {bajos} producto(s) con stock bajo")
             else:
                 self.lbl_alertas.setText("")
         except Exception:
@@ -576,23 +617,18 @@ class MainWindow(QMainWindow):
             self.solicito_cerrar_sesion = True
             self.close()
 
-    def showEvent(self, event):
-        super().showEvent(event)
-        if not getattr(self, "_maximizacion_inicial_aplicada", False):
-            self._maximizacion_inicial_aplicada = True
-            roles = self.usuario.get_roles() if hasattr(self.usuario, "get_roles") else [self.usuario.rol]
-            debe_maximizar = (
-                self.usuario.es_admin()
-                or self.usuario.tiene_rol("admin")
-                or (hasattr(self.usuario, "tiene_doble_rol") and self.usuario.tiene_doble_rol())
-                or len(roles) >= 2
-            )
-            if debe_maximizar:
-                QTimer.singleShot(0, self._aplicar_maximizacion)
-
-    def _aplicar_maximizacion(self):
-        """Maximiza la ventana asegurando que la barra de título y los botones de control sean visibles."""
-        self.showMaximized()
+    def resizeEvent(self, event):
+        """
+        Ajusta el ancho de la barra lateral según el espacio disponible.
+        En pantallas pequeñas se reduce para dejar más área útil al contenido.
+        """
+        super().resizeEvent(event)
+        if not hasattr(self, "sidebar_container"):
+            return
+        nuevo_ancho = 220 if self.width() >= 1200 else 200 if self.width() >= 1024 else 180
+        if nuevo_ancho != getattr(self, "_ancho_sidebar_actual", None):
+            self._ancho_sidebar_actual = nuevo_ancho
+            self.sidebar_container.setFixedWidth(nuevo_ancho)
 
     def closeEvent(self, event):
         if hasattr(self, "_timer_alertas") and self._timer_alertas:

@@ -27,6 +27,8 @@ from PyQt5.QtWidgets import (
     QFrame, QTabWidget, QGridLayout, QScrollArea,
     QFileDialog,
 )
+from sqlalchemy import func
+from sqlalchemy.orm import joinedload
 
 from database import SessionLocal
 from models.ajuste_inventario import AjusteInventario
@@ -694,8 +696,15 @@ class InventarioWidget(QWidget):
         self.combo_cat.blockSignals(False)
 
     def _cargar_datos_principales(self):
-        # Obtener todos los productos activos
-        self._productos_cache = self.session.query(Producto).filter_by(activo=True).order_by(Producto.descripcion).all()
+        # Obtener todos los productos activos. Se precarga la categoría para
+        # evitar una consulta por producto al pintar la tabla (N+1).
+        self._productos_cache = (
+            self.session.query(Producto)
+            .options(joinedload(Producto.categoria))
+            .filter_by(activo=True)
+            .order_by(Producto.descripcion)
+            .all()
+        )
 
         total_costo = Decimal("0.00")
         total_venta = Decimal("0.00")
@@ -1065,50 +1074,73 @@ class InventarioWidget(QWidget):
             self.tabla_alertas.setCellWidget(i, 8, container_aj)
 
     def _cargar_ganancias_ventas(self):
-        """Calcula ingresos reales, costos de mercadería vendida y rentabilidad por producto."""
-        ventas_completadas = self.session.query(Venta).filter(
-            Venta.estado == Venta.ESTADO_COMPLETADA
-        ).all()
+        """
+        Calcula ingresos reales, costos de mercadería vendida y rentabilidad
+        por producto usando agregación SQL. Así no se cargan en memoria todas
+        las ventas y sus detalles, lo que mantiene el módulo ágil incluso en
+        equipos con 4 GB de RAM y años de historial.
+        """
+        cant_ventas = (
+            self.session.query(func.count(Venta.id))
+            .filter(Venta.estado == Venta.ESTADO_COMPLETADA)
+            .scalar()
+        ) or 0
+
+        filas = (
+            self.session.query(
+                DetalleVenta.producto_id.label("producto_id"),
+                Producto.codigo_barras.label("codigo"),
+                Producto.descripcion.label("descripcion"),
+                func.sum(DetalleVenta._cantidad_m).label("cant_m"),
+                func.sum(
+                    DetalleVenta._cantidad_m * DetalleVenta._precio_unitario_c
+                ).label("ingreso_x"),
+                func.sum(
+                    DetalleVenta._cantidad_m * Producto._precio_compra_c
+                ).label("costo_x"),
+            )
+            .join(Venta, Venta.id == DetalleVenta.venta_id)
+            .outerjoin(Producto, Producto.id == DetalleVenta.producto_id)
+            .filter(Venta.estado == Venta.ESTADO_COMPLETADA)
+            .group_by(
+                DetalleVenta.producto_id,
+                Producto.codigo_barras,
+                Producto.descripcion,
+            )
+            .all()
+        )
 
         total_ingresos = Decimal("0.00")
         total_costo_vendido = Decimal("0.00")
+        ranking = []
 
-        # Acumulador por producto: {prod_id: {'prod': prod, 'cant': D, 'ingresos': D, 'costo': D, 'ganancia': D}}
-        por_prod = {}
+        for f in filas:
+            # cantidad_m está en milésimas y los precios en centavos:
+            # cantidad_m * precio_c / 100000 = monto en Bs.
+            cant = Decimal(int(f.cant_m or 0)) / 1000
+            ingresos = Decimal(int(f.ingreso_x or 0)) / 100000
+            costo = Decimal(int(f.costo_x or 0)) / 100000
+            ganancia = ingresos - costo
 
-        for v in ventas_completadas:
-            for d in v.detalles:
-                cant = d.cantidad
-                ingreso = cant * d.precio_unitario_bs
-                costo_u = d.producto.precio_compra_bs if d.producto else Decimal("0.00")
-                costo_tot = cant * costo_u
-                ganancia = ingreso - costo_tot
+            total_ingresos += ingresos
+            total_costo_vendido += costo
 
-                total_ingresos += ingreso
-                total_costo_vendido += costo_tot
-
-                p_id = d.producto_id
-                if p_id not in por_prod:
-                    por_prod[p_id] = {
-                        "producto": d.producto,
-                        "codigo": d.producto.codigo_barras if d.producto else "-",
-                        "descripcion": d.producto.descripcion if d.producto else f"Prod #{p_id}",
-                        "cantidad": Decimal("0.00"),
-                        "ingresos": Decimal("0.00"),
-                        "costo": Decimal("0.00"),
-                        "ganancia": Decimal("0.00"),
-                    }
-                por_prod[p_id]["cantidad"] += cant
-                por_prod[p_id]["ingresos"] += ingreso
-                por_prod[p_id]["costo"] += costo_tot
-                por_prod[p_id]["ganancia"] += ganancia
+            ranking.append({
+                "producto_id": f.producto_id,
+                "codigo": f.codigo or "-",
+                "descripcion": f.descripcion or f"Prod #{f.producto_id}",
+                "cantidad": cant,
+                "ingresos": ingresos,
+                "costo": costo,
+                "ganancia": ganancia,
+            })
 
         ganancia_real_neta = total_ingresos - total_costo_vendido
         margen_real = (ganancia_real_neta / total_ingresos * 100) if total_ingresos > 0 else Decimal("0.0")
 
         # Actualizar tarjeta KPI principal
         self.kpi_ventas_real.lbl_val.setText(f"+{CURRENCY} {ganancia_real_neta:,.2f}")
-        self.kpi_ventas_real.lbl_sub.setText(f"En {len(ventas_completadas)} ventas completadas")
+        self.kpi_ventas_real.lbl_sub.setText(f"En {cant_ventas} ventas completadas")
 
         # Actualizar tarjetas de pestaña 3
         self.card_v_ingresos.lbl_val.setText(f"{CURRENCY} {total_ingresos:,.2f}")
@@ -1117,7 +1149,7 @@ class InventarioWidget(QWidget):
         self.card_v_margen.lbl_val.setText(f"{margen_real:.1f}%")
 
         # Ordenar productos por ganancia real descendente
-        ranking = sorted(por_prod.values(), key=lambda x: x["ganancia"], reverse=True)
+        ranking.sort(key=lambda x: x["ganancia"], reverse=True)
 
         self.tabla_ventas_prod.setRowCount(len(ranking))
         bold_font = QFont()

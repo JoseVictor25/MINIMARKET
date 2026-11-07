@@ -1685,6 +1685,7 @@ class CobrarDialog(QDialog):
                 cli_nombre = getattr(self.cliente, "razon_social", "Público General") if self.cliente else "Público General"
                 self.pdf_path = pdf_ruta
                 self.venta_registrada = {
+                    "venta_id": venta.id,
                     "numero": venta.numero_transaccion,
                     "total": venta.total_bs,
                     "metodo": metodo,
@@ -2023,6 +2024,25 @@ class CobroExitosoDialog(QDialog):
             btn_ticket.clicked.connect(self._abrir_ticket)
             actions_lay.addWidget(btn_ticket)
 
+            btn_imprimir = QPushButton("🖨  Imprimir Ticket")
+            btn_imprimir.setFixedHeight(46)
+            btn_imprimir.setStyleSheet(f"""
+                QPushButton {{
+                    background: {PALETTE['bg_hover']};
+                    color: {PALETTE['success']};
+                    border: none;
+                    border-radius: 10px;
+                    font-size: 14px;
+                    font-weight: bold;
+                }}
+                QPushButton:hover {{
+                    background: {PALETTE['success']};
+                    color: white;
+                }}
+            """)
+            btn_imprimir.clicked.connect(self._imprimir_ticket)
+            actions_lay.addWidget(btn_imprimir)
+
         self.btn_siguiente = QPushButton("➡️  Siguiente Venta  [Enter]")
         self.btn_siguiente.setFixedHeight(50)
         self.btn_siguiente.setDefault(True)
@@ -2053,6 +2073,27 @@ class CobroExitosoDialog(QDialog):
                 QMessageBox.information(self, "Ticket", f"Archivo generado en:\n{self.pdf_path}")
         else:
             QMessageBox.warning(self, "Ticket", "El archivo de ticket no se encuentra disponible.")
+
+    def _imprimir_ticket(self):
+        """Imprime el ticket directamente con QPrinter, sin sobrante de papel."""
+        from models.venta import Venta
+        from services.ticket_service import construir_layout_ticket
+        from services.print_service import imprimir_layout
+
+        venta_id = self.venta_info.get("venta_id")
+        if not venta_id:
+            QMessageBox.warning(self, "Ticket", "No se pudo identificar la venta para imprimir.")
+            return
+        try:
+            with get_session() as session:
+                venta = session.get(Venta, venta_id)
+                if not venta:
+                    QMessageBox.warning(self, "Ticket", "La venta ya no existe en la base de datos.")
+                    return
+                layout = construir_layout_ticket(venta)
+            imprimir_layout(layout, self)
+        except Exception as e:
+            QMessageBox.critical(self, "Error de impresión", f"No se pudo imprimir el ticket:\n{e}")
 
     def keyPressEvent(self, event):
         if event.key() in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space, Qt.Key_Escape):
@@ -2115,6 +2156,7 @@ class POSWidget(QWidget):
         lbl_tit = QLabel("PUNTO DE VENTA")
         lbl_tit.setAlignment(Qt.AlignCenter)
         lbl_tit.setStyleSheet(f"font-size: 26px; font-weight: 900; color: {fg_pos}; letter-spacing: 3px; background: transparent;")
+        self._lbl_titulo_pos = lbl_tit
         left.addWidget(lbl_tit)
 
         es_admin = self.usuario.es_admin()
@@ -2137,6 +2179,7 @@ class POSWidget(QWidget):
             ("Del", "Quitar"),
             ("Esc", "Cancelar"),
         ]
+        self._chips_atajos = []
         for key, desc in atajos:
             chip = QLabel(f"<b style='color: #000000;'>{key}</b> {desc}")
             chip.setFixedHeight(30)
@@ -2153,6 +2196,7 @@ class POSWidget(QWidget):
                 }
             """)
             shortcuts_box.addWidget(chip)
+            self._chips_atajos.append(chip)
 
         sub_header.addLayout(shortcuts_box)
         sub_header.addStretch()
@@ -2208,6 +2252,7 @@ class POSWidget(QWidget):
         lbl_cajero.setFixedHeight(36)
         lbl_cajero.setAlignment(Qt.AlignVCenter)
         lbl_cajero.setStyleSheet(f"color: {fg_pos}; font-size: 13px; font-weight: bold; background: transparent;")
+        self._lbl_cajero = lbl_cajero
         right_header.addWidget(lbl_cajero)
 
         # Botón de Configuración de Código QR para Cobrar
@@ -2323,13 +2368,13 @@ class POSWidget(QWidget):
         self.tabla.setHorizontalHeaderLabels(headers)
         self.tabla.horizontalHeader().setSectionResizeMode(COL_DESCRIPCION, QHeaderView.Stretch)
         self.tabla.horizontalHeader().setDefaultAlignment(Qt.AlignCenter)
-        self.tabla.setColumnWidth(COL_NUM, 46)
-        self.tabla.setColumnWidth(COL_CODIGO, 135)
-        self.tabla.setColumnWidth(COL_UM, 60)
-        self.tabla.setColumnWidth(COL_CANTIDAD, 145)
-        self.tabla.setColumnWidth(COL_PRECIO, 120)
-        self.tabla.setColumnWidth(COL_SUBTOTAL, 130)
-        self.tabla.setColumnWidth(COL_ACCIONES, 65)
+        self.tabla.setColumnWidth(COL_NUM, 42)
+        self.tabla.setColumnWidth(COL_CODIGO, 120)
+        self.tabla.setColumnWidth(COL_UM, 52)
+        self.tabla.setColumnWidth(COL_CANTIDAD, 120)
+        self.tabla.setColumnWidth(COL_PRECIO, 105)
+        self.tabla.setColumnWidth(COL_SUBTOTAL, 115)
+        self.tabla.setColumnWidth(COL_ACCIONES, 58)
 
         hdr_bg = PALETTE.get("pos_table_header_bg", "#111827")
         hdr_text = PALETTE.get("pos_table_header_text", "#ffffff")
@@ -2426,7 +2471,10 @@ class POSWidget(QWidget):
 
         # ── Columna Derecha: Panel de Control de Caja ─────────────────────────
         right = QFrame()
-        right.setFixedWidth(310)
+        self._panel_derecho = right
+        right.setMinimumWidth(260)
+        right.setMaximumWidth(330)
+        right.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         right.setStyleSheet("""
             QFrame {
                 background: #111827;
@@ -3572,10 +3620,50 @@ class POSWidget(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        self._aplicar_responsive()
         self._reposicionar_watermark()
+
+    def _aplicar_responsive(self):
+        """
+        Adapta los elementos del POS al ancho disponible. En pantallas
+        pequeñas oculta atajos secundarios y reduce el panel de cobro para
+        que la tabla de productos conserve espacio útil.
+        """
+        if getattr(self, "_responsive_en_curso", False):
+            return
+        self._responsive_en_curso = True
+        try:
+            ancho = self.width()
+
+            # Título: tamaño proporcional al espacio disponible.
+            if hasattr(self, "_lbl_titulo_pos"):
+                tam = 26 if ancho >= 1200 else 22 if ancho >= 950 else 18
+                self._lbl_titulo_pos.setStyleSheet(
+                    f"font-size: {tam}px; font-weight: 900; color: #000000; "
+                    "letter-spacing: 3px; background: transparent;"
+                )
+
+            # Atajos: se conservan los esenciales en anchos intermedios.
+            chips = getattr(self, "_chips_atajos", [])
+            visibles = len(chips) if ancho >= 1150 else 3 if ancho >= 900 else 0
+            for i, chip in enumerate(chips):
+                chip.setVisible(i < visibles)
+
+            # Nombre del cajero: se oculta cuando el encabezado se comprime.
+            if hasattr(self, "_lbl_cajero"):
+                self._lbl_cajero.setVisible(ancho >= 1050)
+
+            # Panel de cobro: ancho adaptable.
+            if hasattr(self, "_panel_derecho"):
+                nuevo = 320 if ancho >= 1300 else 300 if ancho >= 1100 else 280 if ancho >= 900 else 260
+                if self._panel_derecho.width() != nuevo:
+                    self._panel_derecho.setFixedWidth(nuevo)
+        finally:
+            self._responsive_en_curso = False
 
     def showEvent(self, event):
         super().showEvent(event)
+        self._aplicar_responsive()
         QTimer.singleShot(10, self._reposicionar_watermark)
         QTimer.singleShot(80, self._reposicionar_watermark)
 

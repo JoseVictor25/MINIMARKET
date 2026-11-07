@@ -22,7 +22,7 @@ class Usuario(Base):
     qr_imagen: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
 
     # Relaciones
-    ventas = relationship("Venta", back_populates="usuario")
+    ventas = relationship("Venta", back_populates="usuario", foreign_keys="Venta.usuario_id")
     compras = relationship("Compra", back_populates="usuario")
     ajustes = relationship("AjusteInventario", back_populates="usuario")
 

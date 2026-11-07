@@ -588,7 +588,25 @@ class ComprasWidget(QWidget):
             self.session.expire_all()
         except Exception:
             pass
+        self._cargar_proveedores_filtro()
         self._cargar_compras()
+
+    def _cargar_proveedores_filtro(self):
+        """Recarga el combo de proveedores conservando la selección actual."""
+        if not hasattr(self, "combo_prov_filtro"):
+            return
+        actual = self.combo_prov_filtro.currentData()
+        self.combo_prov_filtro.blockSignals(True)
+        self.combo_prov_filtro.clear()
+        self.combo_prov_filtro.addItem("Todos los proveedores", None)
+        try:
+            for p in self.session.query(Proveedor).order_by(Proveedor.razon_social).all():
+                self.combo_prov_filtro.addItem(p.razon_social, p.id)
+        except Exception:
+            pass
+        idx = self.combo_prov_filtro.findData(actual) if actual else 0
+        self.combo_prov_filtro.setCurrentIndex(max(idx, 0))
+        self.combo_prov_filtro.blockSignals(False)
 
     def _build_ui(self):
         lay = QVBoxLayout(self)
@@ -736,6 +754,19 @@ class ComprasWidget(QWidget):
         self.combo_anio.currentIndexChanged.connect(lambda: self._cargar_compras())
         filter_lay.addWidget(self.combo_anio)
 
+        # Filtro por proveedor
+        self.combo_prov_filtro = QComboBox()
+        self.combo_prov_filtro.setFixedHeight(34)
+        self.combo_prov_filtro.setMinimumWidth(170)
+        self.combo_prov_filtro.addItem("Todos los proveedores", None)
+        try:
+            for p in self.session.query(Proveedor).order_by(Proveedor.razon_social).all():
+                self.combo_prov_filtro.addItem(p.razon_social, p.id)
+        except Exception:
+            pass
+        self.combo_prov_filtro.currentIndexChanged.connect(lambda: self._cargar_compras())
+        filter_lay.addWidget(self.combo_prov_filtro)
+
         filter_lay.addStretch()
 
         # Búsqueda rápida por texto
@@ -749,19 +780,21 @@ class ComprasWidget(QWidget):
         lay.addWidget(filter_frame)
 
         # ── 4. Tabla de Compras ──────────────────────────────────────────────
-        self.tabla = QTableWidget(0, 7)
+        self.tabla = QTableWidget(0, 8)
         self.tabla.setHorizontalHeaderLabels([
-            "ID", "N° Factura", "Proveedor", "Fecha y Hora", f"Total {CURRENCY}", "Registrado por", "Observación"
+            "ID", "N° Factura", "Proveedor", "Fecha y Hora", f"Total {CURRENCY}", "Registrado por", "Observación", "Acción"
         ])
         header = self.tabla.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Interactive)
         header.setSectionResizeMode(2, QHeaderView.Stretch)
-        self.tabla.setColumnWidth(0, 65)
-        self.tabla.setColumnWidth(1, 130)
-        self.tabla.setColumnWidth(3, 145)
-        self.tabla.setColumnWidth(4, 115)
-        self.tabla.setColumnWidth(5, 125)
-        self.tabla.setColumnWidth(6, 160)
+        self.tabla.setColumnWidth(0, 55)
+        self.tabla.setColumnWidth(1, 120)
+        self.tabla.setColumnWidth(3, 140)
+        self.tabla.setColumnWidth(4, 110)
+        self.tabla.setColumnWidth(5, 120)
+        self.tabla.setColumnWidth(6, 150)
+        self.tabla.setColumnWidth(7, 85)
+        self.tabla.verticalHeader().setDefaultSectionSize(34)
 
         self.tabla.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tabla.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -871,6 +904,12 @@ class ComprasWidget(QWidget):
         if inicio and fin:
             query = query.filter(Compra.fecha >= inicio, Compra.fecha <= fin)
 
+        prov_id = None
+        if hasattr(self, "combo_prov_filtro"):
+            prov_id = self.combo_prov_filtro.currentData()
+        if prov_id:
+            query = query.filter(Compra.proveedor_id == prov_id)
+
         compras = query.order_by(Compra.fecha.desc()).all()
 
         # Filtrar por texto si hay búsqueda
@@ -928,6 +967,30 @@ class ComprasWidget(QWidget):
             self.tabla.setItem(i, 5, it_usr)
 
             self.tabla.setItem(i, 6, QTableWidgetItem(c.observacion or "-"))
+
+            btn_ver = QPushButton("👁 Ver")
+            btn_ver.setCursor(Qt.PointingHandCursor)
+            btn_ver.setFixedHeight(26)
+            btn_ver.setStyleSheet("""
+                QPushButton {
+                    background-color: #1e293b;
+                    color: #38bdf8;
+                    border: 1px solid #0284c7;
+                    border-radius: 5px;
+                    font-size: 12px;
+                    font-weight: 600;
+                    padding: 0 8px;
+                }
+                QPushButton:hover {
+                    background-color: #0284c7;
+                    color: #ffffff;
+                }
+            """)
+            btn_ver.clicked.connect(
+                lambda _, compra_id=c.id: self._ver_detalle_id(compra_id)
+            )
+            self.tabla.setCellWidget(i, 7, btn_ver)
+
             self.tabla.item(i, 0).setData(Qt.UserRole, c.id)
 
         self.lbl_conteo.setText(f"Mostrando {len(compras)} compra(s) | {periodo_str}")
@@ -943,6 +1006,15 @@ class ComprasWidget(QWidget):
         c = self._get_compra_seleccionada()
         if not c:
             QMessageBox.information(self, "Seleccionar", "Haga clic en una compra de la lista para ver su detalle.")
+            return
+        dlg = DetalleCompraDialog(c, parent=self)
+        dlg.exec()
+
+    def _ver_detalle_id(self, compra_id: int):
+        """Abre el detalle de una compra desde el botón de la columna Acción."""
+        c = self.session.get(Compra, compra_id)
+        if not c:
+            QMessageBox.warning(self, "Compra no encontrada", "La compra seleccionada ya no existe.")
             return
         dlg = DetalleCompraDialog(c, parent=self)
         dlg.exec()

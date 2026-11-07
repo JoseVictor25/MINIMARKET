@@ -26,8 +26,10 @@ from services.caja_service import (
     obtener_resumen_caja,
     cerrar_caja,
     generar_ticket_arqueo_pdf,
+    construir_layout_arqueo,
     CajaYaAbiertaError,
 )
+from services.print_service import imprimir_layout
 from config import CURRENCY, APP_NAME
 from ui.styles import PALETTE, configurar_calendario_elegante
 
@@ -1156,6 +1158,13 @@ class CierreCajaDialog(QDialog):
         self.btn_imprimir.clicked.connect(self._imprimir_arqueo)
         btn_row.addWidget(self.btn_imprimir)
 
+        self.btn_imprimir_directo = QPushButton("🖨  Imprimir Arqueo")
+        self.btn_imprimir_directo.setFixedHeight(46)
+        self.btn_imprimir_directo.setCursor(Qt.PointingHandCursor)
+        self.btn_imprimir_directo.setStyleSheet(self.btn_imprimir.styleSheet())
+        self.btn_imprimir_directo.clicked.connect(self._imprimir_arqueo_directo)
+        btn_row.addWidget(self.btn_imprimir_directo)
+
         btn_row.addStretch()
 
         self.btn_cancelar = QPushButton("Cancelar")
@@ -1248,8 +1257,11 @@ class CierreCajaDialog(QDialog):
     def _imprimir_arqueo(self):
         """Genera y abre el ticket de arqueo en PDF."""
         try:
+            obs = self.input_obs.text().strip() or None
             with get_session() as session:
-                pdf_path = generar_ticket_arqueo_pdf(session, self.sesion_caja_id)
+                pdf_path = generar_ticket_arqueo_pdf(
+                    session, self.sesion_caja_id, observacion=obs
+                )
 
             if pdf_path and Path(pdf_path).exists():
                 try:
@@ -1260,6 +1272,18 @@ class CierreCajaDialog(QDialog):
                 QMessageBox.warning(self, "Aviso", "No se pudo generar el archivo de ticket.")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al generar reporte de arqueo:\n{e}")
+
+    def _imprimir_arqueo_directo(self):
+        """Envía el arqueo directamente a la impresora con QPrinter."""
+        try:
+            obs = self.input_obs.text().strip() or None
+            with get_session() as session:
+                layout = construir_layout_arqueo(
+                    session, self.sesion_caja_id, observacion=obs
+                )
+            imprimir_layout(layout, self)
+        except Exception as e:
+            QMessageBox.critical(self, "Error de impresión", f"No se pudo imprimir el arqueo:\n{e}")
 
     def _confirmar_cierre(self):
         """Pide confirmación visual amigable y cierra la sesión de caja."""
@@ -1298,7 +1322,9 @@ class CierreCajaDialog(QDialog):
                     obs,
                     usuario_id=self.usuario.id,
                 )
-                pdf_path = generar_ticket_arqueo_pdf(session, self.sesion_caja_id)
+                pdf_path = generar_ticket_arqueo_pdf(
+                    session, self.sesion_caja_id, observacion=obs
+                )
 
             self.cierre_completado = True
 

@@ -57,8 +57,37 @@ def ajustar_stock(
 
 
 def productos_con_stock_bajo(session: Session) -> list[Producto]:
-    """Retorna todos los productos cuyo stock_actual <= stock_minimo."""
-    return [
-        p for p in session.query(Producto).filter(Producto.activo == True).all()
-        if p.stock_bajo
-    ]
+    """
+    Retorna los productos activos cuyo stock actual <= stock mínimo.
+
+    El filtro se hace en SQL (no en Python) para no cargar todo el catálogo
+    en memoria. Esto es importante en equipos con 4 GB de RAM.
+    """
+    return (
+        session.query(Producto)
+        .filter(
+            Producto.activo == True,  # noqa: E712
+            Producto._stock_actual_m <= Producto._stock_minimo_m,
+        )
+        .order_by(Producto.descripcion)
+        .all()
+    )
+
+
+def contar_productos_stock_bajo(session: Session) -> int:
+    """
+    Cuenta los productos activos con stock bajo sin instanciar objetos ORM.
+
+    Se usa en el temporizador de alertas de la ventana principal para evitar
+    cargar el catálogo completo cada minuto.
+    """
+    from sqlalchemy import func
+
+    return (
+        session.query(func.count(Producto.id))
+        .filter(
+            Producto.activo == True,  # noqa: E712
+            Producto._stock_actual_m <= Producto._stock_minimo_m,
+        )
+        .scalar()
+    ) or 0

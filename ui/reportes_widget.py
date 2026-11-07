@@ -31,7 +31,7 @@ from services.reporte_service import (
     obtener_desglose_metodos_pago,
     obtener_rendimiento_cajeros,
     generar_reporte_pdf,
-    exportar_ventas_csv,
+    exportar_ventas_xlsx,
 )
 
 
@@ -632,31 +632,43 @@ class ReportesWidget(QWidget):
         f_inicio, f_fin = self._obtener_fechas_filtro()
         cajero_id = self.combo_cajero.currentData()
 
-        ruta_sugerida = str(Path.home() / f"ventas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
+        ruta_sugerida = str(
+            Path.home() / f"ventas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        )
         destino, _ = QFileDialog.getSaveFileName(
             self,
-            "Exportar Ventas a Excel (CSV)",
+            "Exportar Ventas a Excel (.xlsx)",
             ruta_sugerida,
-            "Archivos CSV (*.csv)",
+            "Archivos Excel (*.xlsx)",
         )
         if not destino:
             return
+        if not destino.lower().endswith(".xlsx"):
+            destino += ".xlsx"
 
         try:
             with get_session() as session:
-                exportar_ventas_csv(session, f_inicio, f_fin, cajero_id, Path(destino))
+                archivo = exportar_ventas_xlsx(
+                    session, f_inicio, f_fin, cajero_id, Path(destino)
+                )
 
             resp = QMessageBox.question(
                 self,
                 "Exportación Exitosa",
-                f"✓ Archivo exportado exitosamente:\n{destino}\n\n¿Desea abrir el archivo en Excel ahora?",
+                f"✓ Archivo Excel exportado exitosamente:\n{archivo}\n\n¿Desea abrir el archivo ahora?",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.Yes,
             )
             if resp == QMessageBox.Yes:
                 try:
-                    os.startfile(destino)
+                    os.startfile(str(archivo))
                 except Exception:
                     pass
+        except PermissionError as e:
+            QMessageBox.critical(
+                self, "Error de permisos",
+                f"No se pudo escribir el archivo en:\n{destino}\n\n"
+                f"Verifique que no esté abierto en Excel y que la carpeta tenga permisos.\n\n{e}",
+            )
         except Exception as e:
             QMessageBox.critical(self, "Error al Exportar", f"No se pudo exportar a Excel:\n{e}")
