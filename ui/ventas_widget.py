@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
     QLineEdit, QPushButton, QTableWidget, QTableWidgetItem,
     QHeaderView, QMessageBox, QAbstractItemView, QSplitter,
     QFrame, QDialog, QScrollArea, QComboBox, QDateEdit, QFileDialog,
-    QFormLayout,
+    QFormLayout, QSizePolicy,
 )
 
 from database import SessionLocal
@@ -239,14 +239,21 @@ class EditarMetodoPagoDialog(QDialog):
             lay.addWidget(aviso)
 
         botones = QHBoxLayout()
-        botones.addStretch()
+        botones.setSpacing(12)
+
+        # Ambos botones comparten exactamente el mismo tamaño para que la
+        # botonera se vea equilibrada.
         btn_cancelar = QPushButton("Cancelar")
-        btn_cancelar.setFixedHeight(38)
+        btn_cancelar.setMinimumWidth(170)
+        btn_cancelar.setFixedHeight(40)
+        btn_cancelar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         btn_cancelar.clicked.connect(self.reject)
-        botones.addWidget(btn_cancelar)
+        botones.addWidget(btn_cancelar, 1)
 
         self.btn_guardar = QPushButton("Guardar cambio")
-        self.btn_guardar.setFixedHeight(38)
+        self.btn_guardar.setMinimumWidth(170)
+        self.btn_guardar.setFixedHeight(40)
+        self.btn_guardar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.btn_guardar.setDefault(True)
         self.btn_guardar.setEnabled(not self._bloqueada)
         self.btn_guardar.setStyleSheet(
@@ -254,7 +261,7 @@ class EditarMetodoPagoDialog(QDialog):
             "border: none; border-radius: 8px; padding: 0 18px;"
         )
         self.btn_guardar.clicked.connect(self.accept)
-        botones.addWidget(self.btn_guardar)
+        botones.addWidget(self.btn_guardar, 1)
         lay.addLayout(botones)
 
     def datos(self) -> tuple[str, str]:
