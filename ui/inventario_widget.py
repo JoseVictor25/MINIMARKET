@@ -17,7 +17,7 @@ import os
 from decimal import Decimal
 from datetime import datetime
 
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QBrush
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
@@ -41,8 +41,16 @@ from services.export_service import (
     exportar_productos_bajo_stock_excel,
     exportar_productos_bajo_stock_pdf,
 )
+from services.inventario_reportes_service import (
+    exportar_ajustes_excel,
+    exportar_ajustes_pdf,
+    exportar_ganancias_excel,
+    exportar_ganancias_pdf,
+    exportar_inventario_excel,
+    exportar_inventario_pdf,
+)
 from config import CURRENCY
-from ui.styles import PALETTE
+from ui.styles import PALETTE, normalizar_botones
 
 
 class AjusteDialog(QDialog):
@@ -56,6 +64,7 @@ class AjusteDialog(QDialog):
         self.setWindowTitle("Registrar Ajuste de Inventario")
         self.setMinimumWidth(540)
         self._build_ui()
+        normalizar_botones(self)
 
     def _build_ui(self):
         lay = QVBoxLayout(self)
@@ -129,13 +138,13 @@ class AjusteDialog(QDialog):
         btn_cancel = QPushButton("Cancelar")
         btn_cancel.setMinimumWidth(100)
         btn_cancel.clicked.connect(self.reject)
-        btn_row.addWidget(btn_cancel)
+        btn_row.addWidget(btn_cancel, 1)
 
         btn_save = QPushButton("✓ Confirmar y Registrar")
         btn_save.setObjectName("btn_primary")
         btn_save.setMinimumWidth(180)
         btn_save.clicked.connect(self._guardar)
-        btn_row.addWidget(btn_save)
+        btn_row.addWidget(btn_save, 1)
 
         lay.addLayout(btn_row)
         self._actualizar_info_prod()
@@ -217,8 +226,25 @@ class InventarioWidget(QWidget):
         self.usuario = usuario
         self.session = SessionLocal()
         self._productos_cache: list[Producto] = []
+        self._ranking_ganancias: list[dict] = []
+        self._ajustes_cache: list[AjusteInventario] = []
         self._build_ui()
         self.actualizar()
+        normalizar_botones(self)
+        QTimer.singleShot(0, self._aplicar_ancho_inventario)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._aplicar_ancho_inventario()
+
+    def _aplicar_ancho_inventario(self):
+        """Conserva visibles las columnas esenciales en pantallas estrechas."""
+        if not hasattr(self, "tabla_inv"):
+            return
+        estrecho = self.width() < 1400
+        for columna in (2, 4, 7, 8, 9):
+            self.tabla_inv.setColumnHidden(columna, estrecho)
+        self.tabla_inv.setColumnWidth(11, 100)
 
     def _build_ui(self):
         main_lay = QVBoxLayout(self)
@@ -240,32 +266,52 @@ class InventarioWidget(QWidget):
         titulos_box.addWidget(lbl_sub)
         hdr.addLayout(titulos_box)
 
-        hdr.addStretch()
+        main_lay.addLayout(hdr)
+
+        acciones_top = QHBoxLayout()
+        acciones_top.setSpacing(10)
+        acciones_bottom = QHBoxLayout()
+        acciones_bottom.setSpacing(10)
+
+        # Selector del reporte que se desea exportar.
+        lbl_reporte = QLabel("Reporte:")
+        lbl_reporte.setStyleSheet(f"color: {PALETTE['text_secondary']}; font-size: 12px; font-weight: 600;")
+        acciones_top.addWidget(lbl_reporte)
+
+        self.combo_reporte = QComboBox()
+        self.combo_reporte.setMinimumWidth(185)
+        self.combo_reporte.setToolTip("Elija qué reporte desea exportar en PDF o Excel")
+        self.combo_reporte.addItem("📦 Inventario completo", "inventario")
+        self.combo_reporte.addItem("⚠️ Productos con stock bajo", "stock_bajo")
+        self.combo_reporte.addItem("💰 Ganancias en ventas", "ganancias")
+        self.combo_reporte.addItem("📋 Historial de ajustes", "ajustes")
+        acciones_top.addWidget(self.combo_reporte, 1)
 
         btn_exp_pdf = QPushButton("📄 Exportar PDF")
         btn_exp_pdf.setCursor(Qt.PointingHandCursor)
-        btn_exp_pdf.setToolTip("Exportar a PDF los productos con stock actual menor o igual al mínimo")
-        btn_exp_pdf.clicked.connect(self._exportar_bajo_stock_pdf)
-        hdr.addWidget(btn_exp_pdf)
+        btn_exp_pdf.setToolTip("Exportar a PDF el reporte seleccionado")
+        btn_exp_pdf.clicked.connect(self._exportar_reporte_pdf)
+        acciones_top.addWidget(btn_exp_pdf, 1)
 
         btn_exp_xlsx = QPushButton("📊 Exportar Excel")
         btn_exp_xlsx.setCursor(Qt.PointingHandCursor)
-        btn_exp_xlsx.setToolTip("Exportar a Excel (.xlsx) los productos con stock actual menor o igual al mínimo")
-        btn_exp_xlsx.clicked.connect(self._exportar_bajo_stock_excel)
-        hdr.addWidget(btn_exp_xlsx)
+        btn_exp_xlsx.setToolTip("Exportar a Excel (.xlsx) el reporte seleccionado")
+        btn_exp_xlsx.clicked.connect(self._exportar_reporte_excel)
+        acciones_top.addWidget(btn_exp_xlsx, 1)
 
         btn_ajuste = QPushButton("+ Nuevo Ajuste de Stock")
         btn_ajuste.setObjectName("btn_primary")
         btn_ajuste.setCursor(Qt.PointingHandCursor)
         btn_ajuste.clicked.connect(self._nuevo_ajuste)
-        hdr.addWidget(btn_ajuste)
+        acciones_bottom.addWidget(btn_ajuste, 1)
 
         btn_refresh = QPushButton("⟳ Actualizar")
         btn_refresh.setCursor(Qt.PointingHandCursor)
         btn_refresh.clicked.connect(self.actualizar)
-        hdr.addWidget(btn_refresh)
+        acciones_bottom.addWidget(btn_refresh, 1)
 
-        main_lay.addLayout(hdr)
+        main_lay.addLayout(acciones_top)
+        main_lay.addLayout(acciones_bottom)
 
         # ── 2. Tarjetas KPI (Métricas Clave) ─────────────────────────────────
         kpis_layout = QHBoxLayout()
@@ -344,6 +390,8 @@ class InventarioWidget(QWidget):
         # ── 4. Pestañas de Contenido ─────────────────────────────────────────
         self.tabs = QTabWidget()
         self.tabs.setObjectName("tabs_inv")
+        self.tabs.tabBar().setExpanding(True)
+        self.tabs.setStyleSheet("QTabBar::tab { min-width: 120px; min-height: 36px; padding: 0 10px; }")
         main_lay.addWidget(self.tabs, 1)
 
         self._build_tab_inventario_general()
@@ -447,17 +495,17 @@ class InventarioWidget(QWidget):
                     it.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
         anchos_inv = {
-            0: 110,   # Código
-            2: 120,   # Categoría
-            3: 85,    # Stock
-            4: 85,    # Mínimo
-            5: 110,   # Costo (Bs)
-            6: 110,   # Venta (Bs)
-            7: 105,   # Gan. Unit.
-            8: 90,    # Margen %
-            9: 110,   # Gan. Total
-            10: 135,  # Estado Stock
-            11: 100,  # Acción
+            0: 100,   # Código
+            2: 105,   # Categoría
+            3: 72,    # Stock
+            4: 72,    # Mínimo
+            5: 92,    # Costo (Bs)
+            6: 92,    # Venta (Bs)
+            7: 88,    # Gan. Unit.
+            8: 70,    # Margen %
+            9: 92,    # Gan. Total
+            10: 112,  # Estado Stock
+            11: 88,   # Acción
         }
         for col, ancho in anchos_inv.items():
             self.tabla_inv.setColumnWidth(col, ancho)
@@ -483,7 +531,7 @@ class InventarioWidget(QWidget):
 
         lay.addLayout(pie_lay)
 
-        self.tabs.addTab(tab, "📊 Inventario y Ganancias")
+        self.tabs.addTab(tab, "Inventario")
 
     # ─────────────────────────────────────────────────────────────────────────
     # PESTAÑA 2: Alertas de Stock y Reposición
@@ -545,7 +593,7 @@ class InventarioWidget(QWidget):
 
         lay.addWidget(self.tabla_alertas, 1)
 
-        self.tabs.addTab(tab, "⚠️ Alertas de Reposición")
+        self.tabs.addTab(tab, "Alertas")
 
     # ─────────────────────────────────────────────────────────────────────────
     # PESTAÑA 3: Ganancias Reales (Ventas Históricas)
@@ -618,7 +666,7 @@ class InventarioWidget(QWidget):
 
         lay.addWidget(self.tabla_ventas_prod, 1)
 
-        self.tabs.addTab(tab, "💰 Ganancias en Ventas")
+        self.tabs.addTab(tab, "Ganancias")
 
     # ─────────────────────────────────────────────────────────────────────────
     # PESTAÑA 4: Historial de Ajustes
@@ -660,7 +708,7 @@ class InventarioWidget(QWidget):
 
         lay.addWidget(self.tabla_ajustes, 1)
 
-        self.tabs.addTab(tab, "📋  Historial de Ajustes  ")
+        self.tabs.addTab(tab, "Ajustes")
 
     # ─────────────────────────────────────────────────────────────────────────
     # CARGA Y ACTUALIZACIÓN DE DATOS
@@ -955,6 +1003,7 @@ class InventarioWidget(QWidget):
             self.tabla_inv.setCellWidget(i, 11, container_inv)
 
         self.lbl_conteo_inv.setText(f"Mostrando {len(productos)} de {len(self._productos_cache)} productos")
+        normalizar_botones(self.tabla_inv)
 
     def _llenar_tabla_alertas(self):
         """Llena la pestaña de alertas con productos agotados o bajo el mínimo."""
@@ -1150,6 +1199,7 @@ class InventarioWidget(QWidget):
 
         # Ordenar productos por ganancia real descendente
         ranking.sort(key=lambda x: x["ganancia"], reverse=True)
+        self._ranking_ganancias = list(ranking)
 
         self.tabla_ventas_prod.setRowCount(len(ranking))
         bold_font = QFont()
@@ -1204,6 +1254,7 @@ class InventarioWidget(QWidget):
         ajustes = self.session.query(AjusteInventario).order_by(
             AjusteInventario.fecha.desc()
         ).limit(250).all()
+        self._ajustes_cache = list(ajustes)
 
         self.tabla_ajustes.setRowCount(len(ajustes))
         bold_font = QFont()
@@ -1261,6 +1312,91 @@ class InventarioWidget(QWidget):
             key=lambda p: (p.stock_actual > 0, p.stock_actual - p.stock_minimo, p.descripcion.lower())
         )
         return productos
+
+    def _exportar_reporte(self, formato: str) -> None:
+        """Exporta el reporte elegido en el combo (PDF o Excel)."""
+        tipo = self.combo_reporte.currentData()
+        if tipo == "stock_bajo":
+            self._exportar_bajo_stock(formato)
+            return
+
+        if tipo == "inventario":
+            datos = list(self._productos_cache)
+            titulo = "Inventario completo"
+            prefijo = "inventario"
+            funcion = exportar_inventario_pdf if formato == "pdf" else exportar_inventario_excel
+        elif tipo == "ganancias":
+            datos = list(getattr(self, "_ranking_ganancias", []))
+            titulo = "Ganancias en ventas"
+            prefijo = "ganancias_ventas"
+            funcion = exportar_ganancias_pdf if formato == "pdf" else exportar_ganancias_excel
+        elif tipo == "ajustes":
+            datos = list(getattr(self, "_ajustes_cache", []))
+            titulo = "Historial de ajustes"
+            prefijo = "historial_ajustes"
+            funcion = exportar_ajustes_pdf if formato == "pdf" else exportar_ajustes_excel
+        else:
+            return
+
+        if not datos:
+            QMessageBox.information(
+                self, "Sin datos para exportar",
+                f"No hay datos disponibles en «{titulo}».\nNo se generó ningún archivo.",
+            )
+            return
+
+        if formato == "pdf":
+            filtro = "Archivos PDF (*.pdf)"
+            extension = ".pdf"
+        else:
+            filtro = "Archivos Excel (*.xlsx)"
+            extension = ".xlsx"
+
+        nombre_defecto = f"{prefijo}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{extension}"
+        path, _ = QFileDialog.getSaveFileName(
+            self, f"Exportar {titulo} a {extension.upper().lstrip('.')}", nombre_defecto, filtro
+        )
+        if not path:
+            return
+        if not path.lower().endswith(extension):
+            path += extension
+
+        try:
+            funcion(datos, path)
+        except PermissionError as e:
+            QMessageBox.critical(
+                self, "Error de permisos",
+                f"No se pudo escribir el archivo en:\n{path}\n\n"
+                f"Verifique que la carpeta tenga permisos de escritura y que el archivo no esté abierto.\n\n{e}",
+            )
+            return
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Error al exportar",
+                f"No se pudo generar el reporte en {extension.upper()}:\n{e}",
+            )
+            return
+
+        res = QMessageBox.question(
+            self, "Exportación exitosa",
+            f"Se exportó «{titulo}» en:\n{path}\n\n¿Desea abrir el archivo ahora?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+
+        if res == QMessageBox.Yes:
+            try:
+                os.startfile(path)
+            except Exception as e:
+                QMessageBox.warning(
+                    self, "No se pudo abrir el archivo",
+                    f"El archivo se generó correctamente, pero no se pudo abrir automáticamente:\n{e}",
+                )
+
+    def _exportar_reporte_pdf(self) -> None:
+        self._exportar_reporte("pdf")
+
+    def _exportar_reporte_excel(self) -> None:
+        self._exportar_reporte("excel")
 
     def _exportar_bajo_stock(self, formato: str) -> None:
         """Solicita la ruta y genera el reporte de bajo stock en PDF o Excel."""
