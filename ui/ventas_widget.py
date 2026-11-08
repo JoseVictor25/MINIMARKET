@@ -241,20 +241,16 @@ class EditarMetodoPagoDialog(QDialog):
 
         botones = QHBoxLayout()
         botones.setSpacing(12)
+        botones.addStretch()
 
         # Ambos botones comparten exactamente el mismo tamaño para que la
         # botonera se vea equilibrada.
         btn_cancelar = QPushButton("Cancelar")
-        btn_cancelar.setMinimumWidth(170)
-        btn_cancelar.setFixedHeight(40)
-        btn_cancelar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         btn_cancelar.clicked.connect(self.reject)
-        botones.addWidget(btn_cancelar, 1)
+        botones.addWidget(btn_cancelar)
 
-        self.btn_guardar = QPushButton("Guardar cambio")
-        self.btn_guardar.setMinimumWidth(170)
-        self.btn_guardar.setFixedHeight(40)
-        self.btn_guardar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.btn_guardar = QPushButton("Guardar")
+        self.btn_guardar.setToolTip("Guardar cambio de método de pago")
         self.btn_guardar.setDefault(True)
         self.btn_guardar.setEnabled(not self._bloqueada)
         self.btn_guardar.setStyleSheet(
@@ -262,10 +258,11 @@ class EditarMetodoPagoDialog(QDialog):
             "border: none; border-radius: 8px; padding: 0 18px;"
         )
         self.btn_guardar.clicked.connect(self.accept)
-        botones.addWidget(self.btn_guardar, 1)
+        botones.addWidget(self.btn_guardar)
         lay.addLayout(botones)
         normalizar_botones(self)
-        igualar_fila(botones, btn_cancelar, self.btn_guardar, colores=("standard", "success"))
+        igualar_fila(botones, btn_cancelar, self.btn_guardar,
+                     colores=("standard", "success"), max_ancho=200)
 
     def datos(self) -> tuple[str, str]:
         return (
@@ -309,7 +306,8 @@ class VentasWidget(QWidget):
         hdr.addStretch()
 
         # Botón Exportar Excel
-        self.btn_export_excel = QPushButton("📊 Exportar Excel")
+        self.btn_export_excel = QPushButton("Excel")
+        self.btn_export_excel.setToolTip("Exportar ventas a Excel")
         self.btn_export_excel.setFixedHeight(36)
         self.btn_export_excel.setCursor(Qt.PointingHandCursor)
         self.btn_export_excel.setStyleSheet("""
@@ -330,7 +328,8 @@ class VentasWidget(QWidget):
         hdr.addWidget(self.btn_export_excel)
 
         # Botón Exportar PDF
-        self.btn_export_pdf = QPushButton("📄 Exportar PDF")
+        self.btn_export_pdf = QPushButton("PDF")
+        self.btn_export_pdf.setToolTip("Exportar ventas a PDF")
         self.btn_export_pdf.setFixedHeight(36)
         self.btn_export_pdf.setCursor(Qt.PointingHandCursor)
         self.btn_export_pdf.setStyleSheet("""
@@ -458,7 +457,7 @@ class VentasWidget(QWidget):
 
         # ── 5. Botones de Acción Inferiores ──────────────────────────────────
         btn_row = QHBoxLayout()
-        btn_ver = QPushButton("👁 Ver Detalle")
+        btn_ver = QPushButton("Ver detalle")
         btn_ver.setFixedHeight(34)
         btn_ver.setCursor(Qt.PointingHandCursor)
         btn_ver.setStyleSheet("""
@@ -478,7 +477,8 @@ class VentasWidget(QWidget):
         btn_ver.clicked.connect(self._ver_detalle)
         btn_row.addWidget(btn_ver)
 
-        btn_ticket = QPushButton("🖨 Re-imprimir Ticket")
+        btn_ticket = QPushButton("Ver ticket")
+        btn_ticket.setToolTip("Reimprimir ticket")
         btn_ticket.setFixedHeight(34)
         btn_ticket.setCursor(Qt.PointingHandCursor)
         btn_ticket.setStyleSheet("""
@@ -499,7 +499,8 @@ class VentasWidget(QWidget):
         btn_ticket.clicked.connect(self._reimprimir)
         btn_row.addWidget(btn_ticket)
 
-        btn_imprimir = QPushButton("🖨 Imprimir Directo")
+        btn_imprimir = QPushButton("Imprimir")
+        btn_imprimir.setToolTip("Imprimir ticket directamente")
         btn_imprimir.setFixedHeight(34)
         btn_imprimir.setCursor(Qt.PointingHandCursor)
         btn_imprimir.setStyleSheet("""
@@ -519,10 +520,11 @@ class VentasWidget(QWidget):
         """)
         btn_imprimir.clicked.connect(self._imprimir)
         btn_row.addWidget(btn_imprimir)
+        btn_row.addStretch()
 
         btn_row2 = QHBoxLayout()
 
-        btn_editar_pago = QPushButton("✏ Editar Pago")
+        btn_editar_pago = QPushButton("Editar pago")
         btn_editar_pago.setFixedHeight(34)
         btn_editar_pago.setCursor(Qt.PointingHandCursor)
         btn_editar_pago.setStyleSheet("""
@@ -545,7 +547,8 @@ class VentasWidget(QWidget):
         if not self.usuario.es_admin():
             btn_editar_pago.hide()
 
-        btn_anular = QPushButton("✗ Anular Venta")
+        btn_anular = QPushButton("Anular")
+        btn_anular.setToolTip("Anular venta")
         btn_anular.setObjectName("btn_danger")
         btn_anular.setFixedHeight(34)
         btn_anular.setCursor(Qt.PointingHandCursor)
@@ -578,9 +581,12 @@ class VentasWidget(QWidget):
         lay.addLayout(btn_row)
         lay.addLayout(btn_row2)
         normalizar_botones(self)
-        igualar_fila(btn_row, btn_ver, btn_ticket, btn_imprimir, tipo="standard")
+        igualar_fila(hdr, self.btn_export_excel, self.btn_export_pdf,
+                     tipo="standard", max_ancho=180)
+        igualar_fila(btn_row, btn_ver, btn_ticket, btn_imprimir,
+                     tipo="standard", max_ancho=180)
         igualar_fila(btn_row2, btn_editar_pago, btn_anular,
-                     tipo="standard", colores=("standard", "danger"))
+                     tipo="standard", colores=("standard", "danger"), max_ancho=180)
 
         # Inicializar visibilidad de controles de filtro
         self._on_periodo_cambiado()
