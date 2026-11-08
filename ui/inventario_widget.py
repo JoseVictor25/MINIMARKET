@@ -50,7 +50,7 @@ from services.inventario_reportes_service import (
     exportar_inventario_pdf,
 )
 from config import CURRENCY
-from ui.styles import PALETTE, normalizar_botones
+from ui.styles import PALETTE, normalizar_botones, configurar_boton
 
 
 class AjusteDialog(QDialog):
@@ -1008,6 +1008,8 @@ class InventarioWidget(QWidget):
                         background-color: {PALETTE['accent_dark']};
                     }}
                 """)
+            configurar_boton(btn_ajustar, "compact",
+                             "warning" if st <= s_min else "standard")
             btn_ajustar.clicked.connect(lambda checked, prod=p: self._nuevo_ajuste(prod))
             c_lay.addWidget(btn_ajustar)
             self.tabla_inv.setCellWidget(i, 11, container_inv)
@@ -1128,6 +1130,7 @@ class InventarioWidget(QWidget):
                     background-color: #b45309;
                 }}
             """)
+            configurar_boton(btn_aj, "compact", "warning")
             btn_aj.clicked.connect(lambda checked, prod=p: self._nuevo_ajuste(prod))
             c_lay.addWidget(btn_aj)
             self.tabla_alertas.setCellWidget(i, 8, container_aj)

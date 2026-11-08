@@ -64,7 +64,8 @@ def configurar_boton(boton: QPushButton, tipo: str = "standard", color: str | No
     boton.setStyleSheet(f"""
         QPushButton {{ background: {fondo}; color: #ffffff; border: 1px solid #64748b;
             border-radius: 7px; padding: 0 {padding}px; font-size: {fuente}px;
-            font-weight: {peso}; }}
+            font-weight: {peso}; min-height: {alto - 2}px;
+            max-height: {alto - 2}px; }}
         QPushButton:hover {{ background: {hover}; color: #ffffff; }}
         QPushButton:pressed {{ background: {pulsado}; color: #ffffff; }}
         QPushButton:disabled {{ background: #374151; color: #f1f5f9;
