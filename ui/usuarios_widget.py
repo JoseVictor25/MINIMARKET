@@ -296,10 +296,10 @@ class UsuarioDialog(QDialog):
         footer_lay = QHBoxLayout(footer)
         footer_lay.setContentsMargins(24, 14, 24, 16)
         footer_lay.setSpacing(12)
+        footer_lay.addStretch()
 
         btn_cancel = QPushButton("Cancelar")
         btn_cancel.setCursor(Qt.PointingHandCursor)
-        btn_cancel.setFixedSize(110, 38)
         btn_cancel.setStyleSheet(f"""
             QPushButton {{
                 background-color: {PALETTE['bg_hover']};
@@ -315,12 +315,11 @@ class UsuarioDialog(QDialog):
             }}
         """)
         btn_cancel.clicked.connect(self.reject)
-        footer_lay.addWidget(btn_cancel, 1)
+        footer_lay.addWidget(btn_cancel)
 
-        btn_save = QPushButton("✓ Guardar Usuario")
+        btn_save = QPushButton("Guardar")
+        btn_save.setToolTip("Guardar usuario")
         btn_save.setCursor(Qt.PointingHandCursor)
-        btn_save.setFixedHeight(38)
-        btn_save.setMinimumWidth(155)
         btn_save.setStyleSheet(f"""
             QPushButton {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -340,12 +339,12 @@ class UsuarioDialog(QDialog):
             }}
         """)
         btn_save.clicked.connect(self._guardar)
-        footer_lay.addWidget(btn_save, 1)
+        footer_lay.addWidget(btn_save)
 
         root.addWidget(footer)
         normalizar_botones(self)
         igualar_fila(footer_lay, btn_cancel, btn_save,
-                     colores=("standard", "success"))
+                     colores=("standard", "success"), max_ancho=200)
 
     def _seleccionar_qr(self):
         arch, _ = QFileDialog.getOpenFileName(
