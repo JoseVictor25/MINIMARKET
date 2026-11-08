@@ -10,7 +10,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt5.QtWidgets import QApplication, QPushButton
+from PyQt5.QtWidgets import QApplication, QHBoxLayout, QPushButton, QWidget
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -18,7 +18,7 @@ from database import Base
 import models  # noqa: F401
 from models.categoria import Categoria
 from models.producto import Producto
-from ui.styles import BUTTON_COLORS, BUTTON_METRICS, STYLESHEET, configurar_boton
+from ui.styles import BUTTON_COLORS, BUTTON_METRICS, STYLESHEET, configurar_boton, igualar_fila
 
 
 def _luminancia(color):
@@ -43,6 +43,25 @@ def test_alturas_comunes_y_ancho_de_texto():
         assert boton.height() == alto
         assert boton.minimumWidth() >= boton.fontMetrics().horizontalAdvance(boton.text())
     assert app is not None
+
+
+def test_igualar_fila_con_tope_iguala_ancho_real():
+    app = QApplication.instance() or QApplication([])
+    contenedor = QWidget()
+    fila = QHBoxLayout(contenedor)
+    fila.addStretch()
+    cancelar = QPushButton("Cancelar")
+    guardar = QPushButton("Guardar")
+    fila.addWidget(cancelar)
+    fila.addWidget(guardar)
+    igualar_fila(fila, cancelar, guardar, max_ancho=200)
+    contenedor.resize(500, 90)
+    contenedor.show()
+    app.processEvents()
+    assert cancelar.width() == guardar.width() <= 200
+    assert cancelar.height() == guardar.height()
+    assert cancelar.minimumWidth() <= cancelar.width()
+    contenedor.close()
 
 
 def test_inventario_cabe_en_ancho_logico_reducido(tmp_path):

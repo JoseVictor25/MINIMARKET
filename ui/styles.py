@@ -150,20 +150,21 @@ def normalizar_botones(contenedor):
 
 def igualar_fila(layout, *botones: QPushButton, tipo: str = "primary", colores=None,
                  max_ancho: int | None = None):
-    """Da a los botones de una fila igual altura y ancho mínimo.
+    """Da a los botones de una fila igual altura y ancho.
 
-    Los botones comparten el mismo ancho mínimo (el mayor del grupo) pero NO
-    se expanden a lo ancho de la fila (stretch=0).  Pasa ``max_ancho`` para
-    fijar un tope visual (p. ej. 180 px en barras de acciones laterales).
+    Con ``max_ancho`` usa el mayor ancho requerido por el grupo, limitado por
+    ese tope. Sin tope conserva solo el ancho mínimo para diseños flexibles.
     """
     colores = colores or (None,) * len(botones)
     for boton, color in zip(botones, colores):
         configurar_boton(boton, tipo, color)
-    ancho = max(boton.minimumWidth() for boton in botones)
+    ancho = max(max(boton.minimumWidth(), boton.sizeHint().width()) for boton in botones)
+    if max_ancho is not None:
+        ancho = min(ancho, max_ancho)
     for boton in botones:
         boton.setMinimumWidth(ancho)
         if max_ancho is not None:
-            boton.setMaximumWidth(max_ancho)
+            boton.setMaximumWidth(ancho)
 
 STYLESHEET = f"""
 QMainWindow, QDialog, QWidget {{
