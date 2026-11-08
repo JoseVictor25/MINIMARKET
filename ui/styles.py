@@ -5,7 +5,7 @@ Tema oscuro profesional - Slate and Teal.
 from pathlib import Path
 
 from PyQt5.QtGui import QFont
-from PyQt5.QtWidgets import QPushButton, QSizePolicy, QTableWidget
+from PyQt5.QtWidgets import QPushButton, QSizePolicy, QTableWidget, QHBoxLayout
 
 _CHECK_ICON_PATH = str(Path(__file__).resolve().parent.parent / "assets" / "check_white.png").replace("\\", "/")
 
@@ -100,6 +100,29 @@ def normalizar_botones(contenedor):
             "success" if tipo == "primary" else None
         )
         configurar_boton(boton, tipo, color)
+    def visitar(layout):
+        if layout is None:
+            return
+        if isinstance(layout, QHBoxLayout):
+            widgets = [layout.itemAt(i).widget() for i in range(layout.count())]
+            if len(widgets) >= 2 and all(isinstance(w, QPushButton) for w in widgets):
+                principal = any(
+                    any(p in w.text().casefold() for p in
+                        ("guardar", "registrar", "cobrar", "confirmar", "aceptar"))
+                    for w in widgets
+                )
+                colores = tuple(
+                    "danger" if any(p in w.text().casefold() for p in
+                        ("quitar", "eliminar", "anular", "cerrar caja", "confirmar cierre"))
+                    else "success" if principal and any(p in w.text().casefold() for p in
+                        ("guardar", "registrar", "cobrar", "confirmar", "aceptar"))
+                    else "standard" for w in widgets
+                )
+                igualar_fila(layout, *widgets, tipo="primary" if principal else "standard",
+                             colores=colores)
+        for i in range(layout.count()):
+            visitar(layout.itemAt(i).layout())
+    visitar(contenedor.layout())
 
 
 def igualar_fila(layout, *botones: QPushButton, tipo: str = "primary", colores=None):

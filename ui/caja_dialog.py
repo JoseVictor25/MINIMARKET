@@ -31,14 +31,20 @@ from services.caja_service import (
 )
 from services.print_service import imprimir_layout
 from config import CURRENCY, APP_NAME
-from ui.styles import PALETTE, configurar_calendario_elegante
+from ui.styles import PALETTE, configurar_calendario_elegante, normalizar_botones
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  FORMULARIO DE APERTURA DE CAJA
 # ══════════════════════════════════════════════════════════════════════════════
 
-class AperturaCajaDialog(QDialog):
+class _BotonesCaja:
+    def showEvent(self, event):
+        super().showEvent(event)
+        normalizar_botones(self)
+
+
+class AperturaCajaDialog(_BotonesCaja, QDialog):
     """
     Formulario de Apertura de Caja.
     Replica la distribución exacta solicitada:
@@ -405,7 +411,7 @@ class AperturaCajaDialog(QDialog):
 #  MODALES MODERNOS DE CONFIRMACIÓN Y ÉXITO DE APERTURA DE CAJA
 # ══════════════════════════════════════════════════════════════════════════════
 
-class AperturaExitosaDialog(QDialog):
+class AperturaExitosaDialog(_BotonesCaja, QDialog):
     """Modal de confirmación visual y elegante tras abrir caja con éxito."""
 
     def __init__(self, cajero_nombre: str, turno: str, monto_inicial: Decimal, fecha_str: str, parent=None):
@@ -518,7 +524,7 @@ class AperturaExitosaDialog(QDialog):
         root.addWidget(footer)
 
 
-class ConfirmarAperturaPromptDialog(QDialog):
+class ConfirmarAperturaPromptDialog(_BotonesCaja, QDialog):
     """Diálogo modal moderno que solicita al usuario abrir caja antes de registrar ventas."""
 
     def __init__(self, usuario: Usuario, parent=None):
@@ -641,7 +647,7 @@ class ConfirmarAperturaPromptDialog(QDialog):
 #  MODAL DE CONFIRMACIÓN AMIGABLE DE CIERRE DE CAJA
 # ══════════════════════════════════════════════════════════════════════════════
 
-class ConfirmarCierreDialog(QDialog):
+class ConfirmarCierreDialog(_BotonesCaja, QDialog):
     """
     Diálogo modal de confirmación con diseño estético premium,
     resumen visual de cifras y botones claros en español.
@@ -850,7 +856,7 @@ class ConfirmarCierreDialog(QDialog):
 #  FORMULARIO DE CIERRE Y ARQUEO DE CAJA
 # ══════════════════════════════════════════════════════════════════════════════
 
-class CierreCajaDialog(QDialog):
+class CierreCajaDialog(_BotonesCaja, QDialog):
     """
     Formulario de Arqueo y Cierre de Caja con diseño espacioso,
     tipografía de alta legibilidad y prevención de compresión de texto.
@@ -1182,6 +1188,10 @@ class CierreCajaDialog(QDialog):
         self.btn_imprimir_directo.setStyleSheet(self.btn_imprimir.styleSheet())
         self.btn_imprimir_directo.clicked.connect(self._imprimir_arqueo_directo)
         btn_row.addWidget(self.btn_imprimir_directo, 1)
+
+        root.addLayout(btn_row)
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(10)
 
         self.btn_cancelar = QPushButton("Cancelar")
         self.btn_cancelar.setFixedHeight(46)

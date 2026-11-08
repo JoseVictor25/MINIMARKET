@@ -28,7 +28,7 @@ from services.caja_service import (
 )
 from ui.caja_dialog import AperturaCajaDialog, CierreCajaDialog
 from config import CURRENCY
-from ui.styles import PALETTE
+from ui.styles import PALETTE, normalizar_botones
 
 
 class CajaWidget(QWidget):
@@ -125,10 +125,12 @@ class CajaWidget(QWidget):
         """Actualiza el estado de la caja activa y el listado histórico."""
         self._render_caja_actual()
         self._cargar_historial()
+        normalizar_botones(self)
 
     def actualizar_caja_actual(self):
         """Refresca solo la tarjeta de la caja propia, sin recalcular el historial."""
         self._render_caja_actual()
+        normalizar_botones(self.card_actual)
 
     def _render_caja_actual(self):
         # Limpiar completamente cualquier widget previo dentro de card_actual
@@ -247,6 +249,8 @@ class CajaWidget(QWidget):
                 top_fila.addWidget(lbl_info)
                 top_fila.addStretch()
 
+                self.lay_actual.addLayout(top_fila)
+                acciones_fila = QHBoxLayout()
                 btn_ticket = QPushButton("📄 Ver Arqueo Actual")
                 btn_ticket.setFixedHeight(36)
                 btn_ticket.setStyleSheet(f"""
@@ -261,7 +265,7 @@ class CajaWidget(QWidget):
                     QPushButton:hover {{ color: white; background: {PALETTE['bg_surface']}; }}
                 """)
                 btn_ticket.clicked.connect(lambda: self._imprimir_arqueo(caja.id))
-                top_fila.addWidget(btn_ticket)
+                acciones_fila.addWidget(btn_ticket, 1)
 
                 btn_cerrar = QPushButton("🔒 Cerrar Caja (Arqueo)")
                 btn_cerrar.setFixedHeight(36)
@@ -277,7 +281,9 @@ class CajaWidget(QWidget):
                     }}
                     QPushButton:hover {{ background: #dc2626; }}
                 """)
-                self.lay_actual.addLayout(top_fila)
+                btn_cerrar.clicked.connect(lambda: self._cerrar_caja_dialog(caja.id))
+                acciones_fila.addWidget(btn_cerrar, 1)
+                self.lay_actual.addLayout(acciones_fila)
 
                 if len(propias) > 1:
                     ids_dup = ", ".join(f"#{c.id}" for c in propias)
