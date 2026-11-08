@@ -27,7 +27,7 @@ from services.usuario_service import (
     detectar_duplicados_username,
     username_disponible,
 )
-from ui.styles import PALETTE
+from ui.styles import PALETTE, normalizar_botones, igualar_fila
 
 
 class UsuarioDialog(QDialog):
@@ -40,7 +40,8 @@ class UsuarioDialog(QDialog):
 
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.setWindowTitle("Nuevo Usuario" if not usuario else f"Editar Usuario: {usuario.username}")
-        self.setFixedWidth(500)
+        self.setMinimumWidth(420)
+        self.resize(500, self.height())
         self.setModal(True)
         self._build_ui()
         if usuario:
@@ -295,7 +296,6 @@ class UsuarioDialog(QDialog):
         footer_lay = QHBoxLayout(footer)
         footer_lay.setContentsMargins(24, 14, 24, 16)
         footer_lay.setSpacing(12)
-        footer_lay.addStretch()
 
         btn_cancel = QPushButton("Cancelar")
         btn_cancel.setCursor(Qt.PointingHandCursor)
@@ -315,7 +315,7 @@ class UsuarioDialog(QDialog):
             }}
         """)
         btn_cancel.clicked.connect(self.reject)
-        footer_lay.addWidget(btn_cancel)
+        footer_lay.addWidget(btn_cancel, 1)
 
         btn_save = QPushButton("✓ Guardar Usuario")
         btn_save.setCursor(Qt.PointingHandCursor)
@@ -340,9 +340,12 @@ class UsuarioDialog(QDialog):
             }}
         """)
         btn_save.clicked.connect(self._guardar)
-        footer_lay.addWidget(btn_save)
+        footer_lay.addWidget(btn_save, 1)
 
         root.addWidget(footer)
+        normalizar_botones(self)
+        igualar_fila(footer_lay, btn_cancel, btn_save,
+                     colores=("standard", "success"))
 
     def _seleccionar_qr(self):
         arch, _ = QFileDialog.getOpenFileName(
@@ -459,6 +462,7 @@ class UsuariosWidget(QWidget):
         self._aviso_duplicados_mostrado = False
         self._build_ui()
         self._cargar()
+        normalizar_botones(self)
 
     def _build_ui(self):
         lay = QVBoxLayout(self)
