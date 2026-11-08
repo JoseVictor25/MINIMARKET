@@ -12,6 +12,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt5.QtWidgets import QApplication, QHBoxLayout, QLabel, QPushButton, QWidget
+from PyQt5.QtGui import QFontMetrics
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -210,17 +211,34 @@ def test_inventario_cabe_en_ancho_logico_reducido(tmp_path):
     from ui.inventario_widget import InventarioWidget
     with patch("ui.inventario_widget.SessionLocal", Session):
         inventario = InventarioWidget(SimpleNamespace())
-    for ancho in (1000, 1280):
+    for ancho in (1000, 1280, 1536):
         inventario.resize(ancho, 700)
         inventario.show()
         app.processEvents()
         assert inventario.width() <= ancho
-        assert inventario.tabla_inv.isColumnHidden(2)
-        assert inventario.tabla_inv.isColumnHidden(9)
+        assert inventario.tabla_inv.isColumnHidden(2) == (ancho < 1400)
+        assert inventario.tabla_inv.isColumnHidden(9) == (ancho < 1400)
         header = inventario.tabla_inv.horizontalHeader()
         assert header.sectionViewportPosition(11) + header.sectionSize(11) <= inventario.tabla_inv.viewport().width()
         accion = inventario.tabla_inv.cellWidget(0, 11).findChild(QPushButton)
         assert accion.height() == BUTTON_METRICS["compact"][0]
+        celda = inventario.tabla_inv.cellWidget(0, 11)
+        esquina_accion = accion.mapTo(celda, accion.rect().topLeft())
+        assert esquina_accion.x() >= 4
+        assert esquina_accion.x() + accion.width() <= celda.width() - 4
+        assert esquina_accion.y() >= 4
+        assert inventario.tabla_inv.rowHeight(0) >= accion.height() + 8
+        etiqueta_reporte, combo_reporte, pdf, excel = inventario._grupo_reporte
+        assert etiqueta_reporte.mapTo(inventario, etiqueta_reporte.rect().topLeft()).x() <= 25
+        assert combo_reporte.width() >= combo_reporte.fontMetrics().horizontalAdvance(
+            combo_reporte.currentText()) + 40
+        if ancho >= 1280:
+            ajustar, actualizar = inventario._grupo_ajuste
+            assert ajustar.y() == pdf.y() == actualizar.y()
+        if ancho == 1536:
+            margen = inventario.tabla_inv.horizontalHeaderItem(8)
+            assert margen.text() == "Margen"
+            assert header.sectionSize(8) >= QFontMetrics(margen.font()).horizontalAdvance(margen.text())
         botones = [b for b in inventario.findChildren(QPushButton)
                    if b.isVisibleTo(inventario)]
         for boton in botones:

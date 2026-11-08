@@ -246,7 +246,27 @@ class InventarioWidget(QWidget):
         estrecho = self.width() < 1400
         for columna in (2, 4, 7, 8, 9):
             self.tabla_inv.setColumnHidden(columna, estrecho)
-        self.tabla_inv.setColumnWidth(11, 100)
+        self.tabla_inv.setColumnWidth(11, 124)
+        self._organizar_acciones()
+
+    def _organizar_acciones(self):
+        """Deja exportación a la izquierda y mueve ajustes según el espacio real."""
+        if not hasattr(self, "_acciones_top"):
+            return
+        espacio = self.width() - 40  # márgenes horizontales del panel
+        grupo_reporte = sum(w.sizeHint().width() for w in self._grupo_reporte)
+        grupo_ajuste = sum(w.sizeHint().width() for w in self._grupo_ajuste)
+        separaciones = self._acciones_top.spacing() * 7
+        caben = grupo_reporte + grupo_ajuste + separaciones <= espacio
+        if caben == self._acciones_juntas:
+            return
+        origen = self._acciones_bottom if caben else self._acciones_top
+        destino = self._acciones_top if caben else self._acciones_bottom
+        for boton in self._grupo_ajuste:
+            origen.removeWidget(boton)
+            destino.addWidget(boton)
+        self._acciones_juntas = caben
+        self.layout().invalidate()
 
     def _build_ui(self):
         main_lay = QVBoxLayout(self)
@@ -273,7 +293,6 @@ class InventarioWidget(QWidget):
 
         acciones_top = QHBoxLayout()
         acciones_top.setSpacing(10)
-        acciones_top.addStretch()
         acciones_bottom = QHBoxLayout()
         acciones_bottom.setSpacing(10)
         acciones_bottom.addStretch()
@@ -284,14 +303,14 @@ class InventarioWidget(QWidget):
         acciones_top.addWidget(lbl_reporte)
 
         self.combo_reporte = QComboBox()
-        self.combo_reporte.setMinimumWidth(185)
-        self.combo_reporte.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
-        self.combo_reporte.setMinimumContentsLength(12)
         self.combo_reporte.setToolTip("Elija qué reporte desea exportar en PDF o Excel")
         self.combo_reporte.addItem("📦 Inventario completo", "inventario")
         self.combo_reporte.addItem("⚠️ Productos con stock bajo", "stock_bajo")
         self.combo_reporte.addItem("💰 Ganancias en ventas", "ganancias")
         self.combo_reporte.addItem("📋 Historial de ajustes", "ajustes")
+        ancho_reporte = max(self.combo_reporte.fontMetrics().horizontalAdvance(
+            self.combo_reporte.itemText(i)) for i in range(self.combo_reporte.count()))
+        self.combo_reporte.setFixedWidth(ancho_reporte + 48)
         acciones_top.addWidget(self.combo_reporte)
 
         btn_exp_pdf = QPushButton("PDF")
@@ -305,6 +324,7 @@ class InventarioWidget(QWidget):
         btn_exp_xlsx.setToolTip("Exportar a Excel (.xlsx) el reporte seleccionado")
         btn_exp_xlsx.clicked.connect(self._exportar_reporte_excel)
         acciones_top.addWidget(btn_exp_xlsx)
+        acciones_top.addStretch()
 
         btn_ajuste = QPushButton("+ Ajustar")
         btn_ajuste.setToolTip("Nuevo ajuste de stock")
@@ -317,6 +337,12 @@ class InventarioWidget(QWidget):
         btn_refresh.setCursor(Qt.PointingHandCursor)
         btn_refresh.clicked.connect(self.actualizar)
         acciones_bottom.addWidget(btn_refresh)
+
+        self._acciones_top = acciones_top
+        self._acciones_bottom = acciones_bottom
+        self._grupo_reporte = (lbl_reporte, self.combo_reporte, btn_exp_pdf, btn_exp_xlsx)
+        self._grupo_ajuste = (btn_ajuste, btn_refresh)
+        self._acciones_juntas = False
 
         main_lay.addLayout(acciones_top)
         main_lay.addLayout(acciones_bottom)
@@ -412,6 +438,7 @@ class InventarioWidget(QWidget):
                      tipo="standard", max_ancho=180)
         igualar_fila(acciones_bottom, btn_ajuste, btn_refresh,
                      tipo="standard", max_ancho=180)
+        self._organizar_acciones()
 
     def _crear_kpi_card(self, titulo: str, valor: str, subtitulo: str, color_valor: str, color_borde: str) -> QFrame:
         """Genera un componente visual tipo tarjeta métrica moderna."""
@@ -491,7 +518,7 @@ class InventarioWidget(QWidget):
         headers = [
             "Código", "Descripción del Producto", "Categoría",
             "Stock", "Mínimo", f"Costo ({CURRENCY})", f"Venta ({CURRENCY})",
-            f"Gan. Unit.", "Margen %", f"Gan. Total",
+            f"Gan. Unit.", "Margen", f"Gan. Total",
             "Estado Stock", "Acción"
         ]
         self.tabla_inv.setHorizontalHeaderLabels(headers)
@@ -519,10 +546,10 @@ class InventarioWidget(QWidget):
             5: 92,    # Costo (Bs)
             6: 92,    # Venta (Bs)
             7: 88,    # Gan. Unit.
-            8: 70,    # Margen %
+            8: 90,    # Margen
             9: 92,    # Gan. Total
             10: 112,  # Estado Stock
-            11: 88,   # Acción
+            11: 124,  # Acción con márgenes para Ajustar
         }
         for col, ancho in anchos_inv.items():
             self.tabla_inv.setColumnWidth(col, ancho)
@@ -958,68 +985,22 @@ class InventarioWidget(QWidget):
             container_inv = QWidget()
             container_inv.setStyleSheet("background: transparent;")
             c_lay = QHBoxLayout(container_inv)
-            c_lay.setContentsMargins(0, 0, 0, 0)
+            c_lay.setContentsMargins(4, 4, 4, 4)
             c_lay.setAlignment(Qt.AlignCenter)
 
             btn_ajustar = QPushButton("Ajustar")
             btn_ajustar.setCursor(Qt.PointingHandCursor)
-            if st <= s_min:
-                btn_ajustar.setStyleSheet(f"""
-                    QPushButton {{
-                        background-color: {PALETTE['warning']};
-                        color: #1c1917;
-                        border: none;
-                        border-radius: 6px;
-                        font-size: 12px;
-                        font-weight: bold;
-                        min-height: 28px;
-                        max-height: 28px;
-                        height: 28px;
-                        min-width: 80px;
-                        max-width: 80px;
-                        width: 80px;
-                        padding: 0px;
-                        margin: 0px;
-                        text-align: center;
-                    }}
-                    QPushButton:hover {{
-                        background-color: #d97706;
-                        color: white;
-                    }}
-                    QPushButton:pressed {{
-                        background-color: #b45309;
-                    }}
-                """)
-            else:
-                btn_ajustar.setStyleSheet(f"""
-                    QPushButton {{
-                        background-color: {PALETTE['bg_hover']};
-                        color: {PALETTE['text_primary']};
-                        border: 1px solid {PALETTE['border']};
-                        border-radius: 6px;
-                        font-size: 12px;
-                        font-weight: 600;
-                        min-height: 28px;
-                        max-height: 28px;
-                        height: 28px;
-                        min-width: 80px;
-                        max-width: 80px;
-                        width: 80px;
-                        padding: 0px;
-                        margin: 0px;
-                        text-align: center;
-                    }}
-                    QPushButton:hover {{
-                        background-color: {PALETTE['accent']};
-                        border-color: {PALETTE['accent']};
-                        color: white;
-                    }}
-                    QPushButton:pressed {{
-                        background-color: {PALETTE['accent_dark']};
-                    }}
-                """)
             configurar_boton(btn_ajustar, "compact",
                              "warning" if st <= s_min else "standard")
+            fuente_ajustar = QFont(btn_ajustar.font())
+            fuente_ajustar.setPixelSize(12)
+            btn_ajustar.setFont(fuente_ajustar)
+            btn_ajustar.setStyleSheet(
+                btn_ajustar.styleSheet() + "QPushButton { font-size: 12px; padding: 0 2px; }"
+            )
+            btn_ajustar.setMinimumWidth(0)
+            btn_ajustar.setMaximumWidth(92)
+            btn_ajustar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             btn_ajustar.clicked.connect(lambda checked, prod=p: self._nuevo_ajuste(prod))
             c_lay.addWidget(btn_ajustar)
             self.tabla_inv.setCellWidget(i, 11, container_inv)
