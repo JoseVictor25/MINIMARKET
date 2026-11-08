@@ -2532,8 +2532,8 @@ class POSWidget(QWidget):
             }
         """)
         right_lay = QVBoxLayout(right)
-        right_lay.setContentsMargins(12, 14, 12, 14)
-        right_lay.setSpacing(10)
+        right_lay.setContentsMargins(10, 10, 10, 10)
+        right_lay.setSpacing(6)
 
         # ── Bloque 1: TOTAL A COBRAR ──────────────────────────────────────────
         total_card = QFrame()
@@ -2545,8 +2545,8 @@ class POSWidget(QWidget):
             }
         """)
         tot_lay = QVBoxLayout(total_card)
-        tot_lay.setContentsMargins(16, 16, 16, 16)
-        tot_lay.setSpacing(4)
+        tot_lay.setContentsMargins(12, 10, 12, 10)
+        tot_lay.setSpacing(2)
 
         lbl_tot_title = QLabel("TOTAL A PAGAR")
         lbl_tot_title.setAlignment(Qt.AlignCenter)
@@ -2556,7 +2556,7 @@ class POSWidget(QWidget):
         self.lbl_total = QLabel(f"{CURRENCY} 0.00")
         self.lbl_total.setAlignment(Qt.AlignCenter)
         self.lbl_total.setStyleSheet("""
-            font-size: 42px;
+            font-size: 36px;
             font-weight: 900;
             color: #ffffff;
             letter-spacing: -1px;
@@ -2582,8 +2582,8 @@ class POSWidget(QWidget):
             }
         """)
         cli_lay = QVBoxLayout(cli_card)
-        cli_lay.setContentsMargins(14, 12, 14, 12)
-        cli_lay.setSpacing(8)
+        cli_lay.setContentsMargins(10, 8, 10, 8)
+        cli_lay.setSpacing(4)
 
         lbl_cli_hdr = QLabel("👤  CLIENTE (OPCIONAL)")
         lbl_cli_hdr.setStyleSheet("color: #e2e8f0; font-size: 14px; font-weight: bold; background: transparent; border: none;")
@@ -2593,7 +2593,7 @@ class POSWidget(QWidget):
         cli_row.setSpacing(8)
         self.input_nit = QLineEdit()
         self.input_nit.setPlaceholderText("NIT o Razón Social...")
-        self.input_nit.setFixedHeight(38)
+        self.input_nit.setFixedHeight(32)
         self.input_nit.setStyleSheet("""
             QLineEdit {
                 background-color: #0f172a;
@@ -2658,8 +2658,8 @@ class POSWidget(QWidget):
             }
         """)
         uv_lay = QVBoxLayout(self.ultima_venta_card)
-        uv_lay.setContentsMargins(14, 12, 14, 12)
-        uv_lay.setSpacing(8)
+        uv_lay.setContentsMargins(10, 8, 10, 8)
+        uv_lay.setSpacing(4)
 
         lbl_uv_hdr = QLabel("🧾  ÚLTIMA VENTA REALIZADA")
         lbl_uv_hdr.setStyleSheet("color: #e2e8f0; font-size: 14px; font-weight: bold; background: transparent; border: none;")
@@ -2702,15 +2702,16 @@ class POSWidget(QWidget):
             }
         """)
         res_lay = QVBoxLayout(resumen_box)
-        res_lay.setContentsMargins(14, 12, 14, 12)
-        res_lay.setSpacing(6)
+        res_lay.setContentsMargins(10, 8, 10, 8)
+        res_lay.setSpacing(4)
 
         lbl_res_h = QLabel("🛒  Artículos en curso")
         lbl_res_h.setStyleSheet("color: #e2e8f0; font-size: 14px; font-weight: bold; background: transparent; border: none;")
         res_lay.addWidget(lbl_res_h)
 
         self.lista_resumen = QListWidget()
-        self.lista_resumen.setFixedHeight(85)
+        self.lista_resumen.setMinimumHeight(0)
+        self.lista_resumen.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
         self.lista_resumen.setStyleSheet("""
             QListWidget {
                 background: transparent;
@@ -2724,10 +2725,10 @@ class POSWidget(QWidget):
             }
         """)
         self.lista_resumen.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        res_lay.addWidget(self.lista_resumen)
+        res_lay.addWidget(self.lista_resumen, 1)
 
-        right_lay.addWidget(resumen_box)
-        right_lay.addStretch()
+        right_lay.addWidget(resumen_box, 1)
+        # sin addStretch() — resumen_box absorbe el espacio sobrante
 
         # ── Bloque 5: Botones de Acción (COBRAR / CANCELAR) ───────────────────
         acciones_card = QFrame()
@@ -2739,20 +2740,20 @@ class POSWidget(QWidget):
             }
         """)
         acc_lay = QVBoxLayout(acciones_card)
-        acc_lay.setContentsMargins(14, 14, 14, 14)
-        acc_lay.setSpacing(10)
+        acc_lay.setContentsMargins(10, 10, 10, 10)
+        acc_lay.setSpacing(6)
 
         # Mensaje de estado
         self.lbl_status = QLabel("")
         self.lbl_status.setWordWrap(True)
         self.lbl_status.setAlignment(Qt.AlignCenter)
-        self.lbl_status.setStyleSheet("color: #22c55e; font-size: 14px; font-weight: bold; background: transparent; border: none;")
+        self.lbl_status.setStyleSheet("color: #22c55e; font-size: 13px; font-weight: bold; background: transparent; border: none;")
         acc_lay.addWidget(self.lbl_status)
 
         # Botón gigante F12 COBRAR
         self.btn_cobrar = QPushButton("COBRAR")
         self.btn_cobrar.setEnabled(False)
-        self.btn_cobrar.setFixedHeight(54)
+        self.btn_cobrar.setFixedHeight(44)
         self.btn_cobrar.setCursor(Qt.PointingHandCursor)
         self.btn_cobrar.setStyleSheet("""
             QPushButton {
@@ -2760,7 +2761,7 @@ class POSWidget(QWidget):
                 color: #ffffff;
                 border: none;
                 border-radius: 10px;
-                font-size: 16px;
+                font-size: 15px;
                 font-weight: 900;
                 letter-spacing: 0.5px;
             }
@@ -2773,7 +2774,7 @@ class POSWidget(QWidget):
             QPushButton:disabled {
                 background-color: #334155;
                 color: #94a3b8;
-                font-size: 15px;
+                font-size: 14px;
             }
         """)
         self.btn_cobrar.clicked.connect(self._abrir_cobro)
@@ -2782,7 +2783,7 @@ class POSWidget(QWidget):
         # Botón Cancelar Venta
         btn_cancelar = QPushButton("Cancelar venta")
         btn_cancelar.setToolTip("Cancelar venta (Esc)")
-        btn_cancelar.setFixedHeight(40)
+        btn_cancelar.setFixedHeight(34)
         btn_cancelar.setCursor(Qt.PointingHandCursor)
         btn_cancelar.setStyleSheet("""
             QPushButton {
@@ -2790,7 +2791,7 @@ class POSWidget(QWidget):
                 color: #ffffff;
                 border: none;
                 border-radius: 8px;
-                font-size: 14px;
+                font-size: 13px;
                 font-weight: bold;
             }
             QPushButton:hover {
@@ -2811,7 +2812,7 @@ class POSWidget(QWidget):
         for etiqueta in right.findChildren(QLabel):
             etiqueta.setWordWrap(True)
         self.input_nit.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
-        self.lista_resumen.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.lista_resumen.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
         root.addWidget(right, 0)
 
     def _setup_shortcuts(self):

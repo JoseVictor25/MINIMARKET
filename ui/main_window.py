@@ -467,7 +467,9 @@ class MainWindow(QMainWindow):
         for clave in claves:
             w = constructores[clave]()
             self._widgets[clave] = w
-            pagina = self._crear_pagina_scroll(w)
+            # El POS ya gestiona su propio scroll interno (tabla del carrito);
+            # la página envolvente no necesita barra vertical.
+            pagina = self._crear_pagina_scroll(w, sin_scroll_vertical=(clave == "pos"))
             self._paginas[clave] = pagina
             self.stack.addWidget(pagina)
 
@@ -489,16 +491,23 @@ class MainWindow(QMainWindow):
         self.lbl_alertas.setStyleSheet(f"color: {PALETTE['warning']}; font-weight: bold;")
         self.status.addPermanentWidget(self.lbl_alertas)
 
-    def _crear_pagina_scroll(self, widget: QWidget) -> QScrollArea:
+    def _crear_pagina_scroll(self, widget: QWidget, sin_scroll_vertical: bool = False) -> QScrollArea:
         """
         Envuelve un módulo en un QScrollArea para que, en pantallas pequeñas,
         el contenido se pueda desplazar en lugar de quedar recortado.
+
+        Para el Punto de Venta se desactiva el scroll vertical porque el POS
+        está diseñado para caber en 1366×768; solo la tabla del carrito tiene
+        su propio scroll interno.
         """
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        if sin_scroll_vertical:
+            scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        else:
+            scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
         scroll.viewport().setAutoFillBackground(False)
