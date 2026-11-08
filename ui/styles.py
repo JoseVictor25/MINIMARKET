@@ -48,6 +48,7 @@ BUTTON_COLORS = {
     "success": ("#166534", "#14532d", "#052e16"),
     "danger": ("#991b1b", "#7f1d1d", "#450a0a"),
     "warning": ("#92400e", "#78350f", "#451a03"),
+    "brand": ("#9d174d", "#831843", "#500724"),
 }
 
 
@@ -93,6 +94,7 @@ def normalizar_botones(contenedor):
             ancestro = ancestro.parentWidget()
         tipo = "compact" if en_tabla or boton.property("estilo_boton") == "compact" else (
             "primary" if boton.property("estilo_boton") == "primary" or
+            boton.objectName() in ("btn_primary", "btn_success") or
             any(palabra in texto for palabra in ("guardar", "registrar", "cobrar", "confirmar", "aceptar"))
             else "standard"
         )

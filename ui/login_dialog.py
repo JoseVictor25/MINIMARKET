@@ -5,6 +5,7 @@ Diseño moderno réplica exacta del mockup oficial.
 from __future__ import annotations
 
 from pathlib import Path
+from ui.styles import normalizar_botones, configurar_boton
 
 from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve, QPoint, QSize
 from PyQt5.QtGui import QPixmap, QIcon, QPainter, QColor
@@ -90,6 +91,8 @@ class LoginDialog(QDialog):
         super().__init__(parent)
         self.usuario_autenticado: Usuario | None = None
         self._build_ui()
+        normalizar_botones(self)
+        configurar_boton(self.btn_login, "primary", "brand")
         self.setWindowTitle(f"{APP_NAME} – Iniciar Sesión")
         h = 590 if SLOGAN else 550
         self.setFixedSize(400, h)
@@ -240,6 +243,7 @@ class LoginDialog(QDialog):
         pass_layout.addStretch()
 
         self.btn_toggle_pass = QPushButton()
+        self.btn_toggle_pass.setProperty("estilo_boton", "compact")
         self.btn_toggle_pass.setFocusPolicy(Qt.NoFocus)
         self.btn_toggle_pass.setCursor(Qt.PointingHandCursor)
         self.btn_toggle_pass.setFixedSize(30, 30)
@@ -291,6 +295,7 @@ class LoginDialog(QDialog):
 
         # ── Botón Ingresar ────────────────────────────────────────────
         btn = QPushButton(LOGIN_BTN_TEXT)
+        self.btn_login = btn
         btn.setObjectName("btn_primary")
         btn.setCursor(Qt.PointingHandCursor)
         btn.setFixedHeight(48)
