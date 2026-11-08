@@ -177,6 +177,7 @@ class CajaWidget(QWidget):
                 lbl_sub = QLabel(
                     "Abre tu propia caja para registrar movimientos y cobrar en el Punto de Venta."
                 )
+                lbl_sub.setWordWrap(True)
 
                 lbl_msg.setAlignment(Qt.AlignCenter)
                 lbl_msg.setFont(QFont("Segoe UI", 14, QFont.Bold))
