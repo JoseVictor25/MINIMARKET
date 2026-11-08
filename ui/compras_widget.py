@@ -492,14 +492,16 @@ class NuevaCompraDialog(QDialog):
             btn_quitar.setCursor(Qt.PointingHandCursor)
             btn_quitar.setIcon(QIcon(icono_quitar))
             btn_quitar.setIconSize(QSize(10, 10))
-            btn_quitar.setFixedSize(100, BUTTON_METRICS["compact"][0])
+            btn_quitar.setMinimumHeight(22)
+            btn_quitar.setMaximumHeight(BUTTON_METRICS["compact"][0])
+            btn_quitar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             btn_quitar.setStyleSheet("""
                 QPushButton {
                     background-color: #991b1b;
                     color: #ffffff;
                     border: 1px solid #f87171;
                     border-radius: 6px;
-                    font-size: 13px;
+                    font-size: 12px;
                     font-weight: bold;
                     padding: 0 2px;
                 }
@@ -514,11 +516,14 @@ class NuevaCompraDialog(QDialog):
 
             c_widget = QWidget()
             c_lay = QHBoxLayout(c_widget)
-            c_lay.setContentsMargins(4, 4, 4, 4)
-            c_lay.setAlignment(Qt.AlignCenter)
-            c_lay.addWidget(btn_quitar, 0, Qt.AlignCenter)
+            c_lay.setContentsMargins(6, 4, 6, 4)
+            c_lay.addWidget(btn_quitar, 1, Qt.AlignVCenter)
             self.tabla.setCellWidget(i, 5, c_widget)
 
+        # La geometría de cada celda se fija después de instalar los widgets.
+        self.tabla.setColumnWidth(5, 110)
+        for i in range(self.tabla.rowCount()):
+            self.tabla.setRowHeight(i, 40)
         self.lbl_total.setText(f"Total: {CURRENCY} {total:.2f}")
         normalizar_botones(self.tabla)
 

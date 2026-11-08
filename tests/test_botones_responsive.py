@@ -156,8 +156,9 @@ def test_cobro_exitoso_muestra_vuelto_sin_superponer_etiquetas():
 
 
 def test_quitar_compra_cabe_en_su_celda(tmp_path):
-    from PyQt5.QtCore import QPoint
+    from PyQt5.QtCore import QPoint, QRect
     from PyQt5.QtTest import QTest
+    from PyQt5.QtWidgets import QSizePolicy
     app = QApplication.instance() or QApplication([])
     engine = create_engine(f"sqlite:///{tmp_path / 'compra.db'}")
     Base.metadata.create_all(engine)
@@ -177,14 +178,34 @@ def test_quitar_compra_cabe_en_su_celda(tmp_path):
         margen = celda.layout().contentsMargins()
         assert dialogo.tabla.columnWidth(5) == 110
         assert dialogo.tabla.rowHeight(0) == 40
-        assert (margen.left(), margen.top(), margen.right(), margen.bottom()) == (4, 4, 4, 4)
-        assert boton.height() == BUTTON_METRICS["compact"][0] == 28
+        assert (margen.left(), margen.top(), margen.right(), margen.bottom()) == (6, 4, 6, 4)
+        assert boton.minimumHeight() == 22
+        assert boton.maximumHeight() == BUTTON_METRICS["compact"][0] == 28
+        assert boton.sizePolicy().verticalPolicy() == QSizePolicy.Expanding
+        assert 22 <= boton.height() <= 28
         assert boton.width() <= celda.width() - margen.left() - margen.right()
         assert boton.fontMetrics().horizontalAdvance(boton.text()) + boton.iconSize().width() + 10 <= boton.width()
-        assert boton.grab().toImage().pixelColor(5, 14).name() == "#991b1b"
-        QTest.mouseMove(boton, QPoint(5, 14))
+        assert "min-height" not in boton.styleSheet()
+        assert "max-height" not in boton.styleSheet()
+        for ancho in (900, 1000):
+            dialogo.resize(ancho, 700)
+            app.processEvents()
+            rect_celda = QRect(celda.mapTo(dialogo.tabla, QPoint(0, 0)), celda.size())
+            rect_boton = QRect(boton.mapTo(dialogo.tabla, QPoint(0, 0)), boton.size())
+            assert rect_celda.contains(rect_boton)
+            assert dialogo.tabla.rowHeight(0) == 40
+        dialogo._refrescar_tabla()
         app.processEvents()
-        assert boton.grab().toImage().pixelColor(5, 14).name() == "#7f1d1d"
+        assert dialogo.tabla.rowHeight(0) == 40
+        boton = dialogo.tabla.cellWidget(0, 5).findChild(QPushButton)
+        assert boton.grab().toImage().pixelColor(5, 14).name() == "#991b1b"
+        # El plugin offscreen no siempre traslada el cursor con escala fraccionaria.
+        if os.environ.get("QT_SCALE_FACTOR", "1") == "1":
+            QTest.mouseMove(boton, QPoint(5, 14))
+            app.processEvents()
+            assert boton.grab().toImage().pixelColor(5, 14).name() == "#7f1d1d"
+        else:
+            assert "#7f1d1d" in boton.styleSheet()
         dialogo.close()
     engine.dispose()
 
