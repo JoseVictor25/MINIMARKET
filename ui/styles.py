@@ -101,6 +101,20 @@ def normalizar_botones(contenedor):
         )
         configurar_boton(boton, tipo, color)
 
+
+def igualar_fila(layout, *botones: QPushButton, tipo: str = "primary", colores=None):
+    """Da a los botones de una fila igual altura, ancho mínimo y expansión."""
+    colores = colores or (None,) * len(botones)
+    for boton, color in zip(botones, colores):
+        configurar_boton(boton, tipo, color)
+    ancho = max(boton.minimumWidth() for boton in botones)
+    for boton in botones:
+        boton.setMinimumWidth(ancho)
+        for indice in range(layout.count()):
+            if layout.itemAt(indice).widget() is boton:
+                layout.setStretch(indice, 1)
+                break
+
 STYLESHEET = f"""
 QMainWindow, QDialog, QWidget {{
     background-color: {PALETTE['bg_base']};

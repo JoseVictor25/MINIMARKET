@@ -28,7 +28,7 @@ from models.usuario import Usuario
 from services.compra_service import registrar_compra
 from services.export_service import exportar_compras_excel, exportar_compras_pdf
 from config import CURRENCY, APP_NAME
-from ui.styles import PALETTE, configurar_calendario_elegante
+from ui.styles import PALETTE, configurar_calendario_elegante, normalizar_botones, igualar_fila
 
 
 class NuevaCompraDialog(QDialog):
@@ -260,7 +260,7 @@ class NuevaCompraDialog(QDialog):
         btn_cancel.setFixedWidth(100)
         btn_cancel.setCursor(Qt.PointingHandCursor)
         btn_cancel.clicked.connect(self.reject)
-        bottom.addWidget(btn_cancel)
+        bottom.addWidget(btn_cancel, 1)
 
         btn_guardar = QPushButton("✓ Registrar Compra")
         btn_guardar.setObjectName("btn_success")
@@ -282,9 +282,10 @@ class NuevaCompraDialog(QDialog):
             }
         """)
         btn_guardar.clicked.connect(self._guardar)
-        bottom.addWidget(btn_guardar)
-
+        bottom.addWidget(btn_guardar, 1)
         root.addLayout(bottom)
+        normalizar_botones(self)
+        igualar_fila(bottom, btn_cancel, btn_guardar, colores=("standard", "success"))
 
     @staticmethod
     def _normalizar(texto: str) -> str:
@@ -511,6 +512,7 @@ class NuevaCompraDialog(QDialog):
             self.tabla.setCellWidget(i, 5, c_widget)
 
         self.lbl_total.setText(f"Total: {CURRENCY} {total:.2f}")
+        normalizar_botones(self.tabla)
 
     def _guardar(self):
         if not self._items:
@@ -612,6 +614,7 @@ class DetalleCompraDialog(QDialog):
         self.setWindowTitle(f"Detalle de Compra – Factura #{compra.numero_factura}")
         self.setMinimumSize(720, 520)
         self._build_ui()
+        normalizar_botones(self)
 
     def _build_ui(self):
         lay = QVBoxLayout(self)
@@ -714,6 +717,7 @@ class ComprasWidget(QWidget):
         self._compras_filtradas: list[Compra] = []
         self._build_ui()
         self._cargar_compras()
+        normalizar_botones(self)
 
     def actualizar(self):
         """Refresca el historial de compras conservando los filtros actuales."""
@@ -1128,6 +1132,7 @@ class ComprasWidget(QWidget):
             self.tabla.item(i, 0).setData(Qt.UserRole, c.id)
 
         self.lbl_conteo.setText(f"Mostrando {len(compras)} compra(s) | {periodo_str}")
+        normalizar_botones(self.tabla)
 
     def _get_compra_seleccionada(self) -> Compra | None:
         row = self.tabla.currentRow()
