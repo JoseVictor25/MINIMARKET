@@ -298,9 +298,12 @@ class InventarioWidgetExportTest(TempDBTestCase):
         super().tearDown()
 
     def test_botones_visibles(self):
-        textos = [b.text() for b in self.widget.findChildren(QPushButton)]
-        self.assertIn("📄 Exportar PDF", textos)
-        self.assertIn("📊 Exportar Excel", textos)
+        botones = {b.text(): b for b in self.widget.findChildren(QPushButton)}
+        self.assertIn("PDF", botones)
+        self.assertIn("Excel", botones)
+        self.assertEqual(botones["PDF"].toolTip(), "Exportar a PDF el reporte seleccionado")
+        self.assertEqual(botones["Excel"].toolTip(),
+                         "Exportar a Excel (.xlsx) el reporte seleccionado")
 
     def test_exportar_excel_desde_ui(self):
         destino = self.tmp_path / "ui_bajo.xlsx"

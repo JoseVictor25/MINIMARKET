@@ -50,7 +50,7 @@ from services.inventario_reportes_service import (
     exportar_inventario_pdf,
 )
 from config import CURRENCY
-from ui.styles import PALETTE, normalizar_botones, configurar_boton
+from ui.styles import PALETTE, normalizar_botones, configurar_boton, igualar_fila
 
 
 class AjusteDialog(QDialog):
@@ -64,7 +64,6 @@ class AjusteDialog(QDialog):
         self.setWindowTitle("Registrar Ajuste de Inventario")
         self.setMinimumWidth(540)
         self._build_ui()
-        normalizar_botones(self)
 
     def _build_ui(self):
         lay = QVBoxLayout(self)
@@ -138,15 +137,19 @@ class AjusteDialog(QDialog):
         btn_cancel = QPushButton("Cancelar")
         btn_cancel.setMinimumWidth(100)
         btn_cancel.clicked.connect(self.reject)
-        btn_row.addWidget(btn_cancel, 1)
+        btn_row.addWidget(btn_cancel)
 
-        btn_save = QPushButton("✓ Confirmar y Registrar")
+        btn_save = QPushButton("Confirmar")
+        btn_save.setToolTip("Confirmar y registrar ajuste de inventario")
         btn_save.setObjectName("btn_primary")
         btn_save.setMinimumWidth(180)
         btn_save.clicked.connect(self._guardar)
-        btn_row.addWidget(btn_save, 1)
+        btn_row.addWidget(btn_save)
 
         lay.addLayout(btn_row)
+        normalizar_botones(self)
+        igualar_fila(btn_row, btn_cancel, btn_save,
+                     colores=("standard", "success"), max_ancho=200)
         self._actualizar_info_prod()
 
     def _actualizar_info_prod(self):
@@ -230,7 +233,6 @@ class InventarioWidget(QWidget):
         self._ajustes_cache: list[AjusteInventario] = []
         self._build_ui()
         self.actualizar()
-        normalizar_botones(self)
         QTimer.singleShot(0, self._aplicar_ancho_inventario)
 
     def resizeEvent(self, event):
@@ -271,8 +273,10 @@ class InventarioWidget(QWidget):
 
         acciones_top = QHBoxLayout()
         acciones_top.setSpacing(10)
+        acciones_top.addStretch()
         acciones_bottom = QHBoxLayout()
         acciones_bottom.setSpacing(10)
+        acciones_bottom.addStretch()
 
         # Selector del reporte que se desea exportar.
         lbl_reporte = QLabel("Reporte:")
@@ -288,30 +292,31 @@ class InventarioWidget(QWidget):
         self.combo_reporte.addItem("⚠️ Productos con stock bajo", "stock_bajo")
         self.combo_reporte.addItem("💰 Ganancias en ventas", "ganancias")
         self.combo_reporte.addItem("📋 Historial de ajustes", "ajustes")
-        acciones_top.addWidget(self.combo_reporte, 1)
+        acciones_top.addWidget(self.combo_reporte)
 
-        btn_exp_pdf = QPushButton("📄 Exportar PDF")
+        btn_exp_pdf = QPushButton("PDF")
         btn_exp_pdf.setCursor(Qt.PointingHandCursor)
         btn_exp_pdf.setToolTip("Exportar a PDF el reporte seleccionado")
         btn_exp_pdf.clicked.connect(self._exportar_reporte_pdf)
-        acciones_top.addWidget(btn_exp_pdf, 1)
+        acciones_top.addWidget(btn_exp_pdf)
 
-        btn_exp_xlsx = QPushButton("📊 Exportar Excel")
+        btn_exp_xlsx = QPushButton("Excel")
         btn_exp_xlsx.setCursor(Qt.PointingHandCursor)
         btn_exp_xlsx.setToolTip("Exportar a Excel (.xlsx) el reporte seleccionado")
         btn_exp_xlsx.clicked.connect(self._exportar_reporte_excel)
-        acciones_top.addWidget(btn_exp_xlsx, 1)
+        acciones_top.addWidget(btn_exp_xlsx)
 
-        btn_ajuste = QPushButton("+ Ajustar stock")
+        btn_ajuste = QPushButton("+ Ajustar")
+        btn_ajuste.setToolTip("Nuevo ajuste de stock")
         btn_ajuste.setObjectName("btn_primary")
         btn_ajuste.setCursor(Qt.PointingHandCursor)
         btn_ajuste.clicked.connect(self._nuevo_ajuste)
-        acciones_bottom.addWidget(btn_ajuste, 1)
+        acciones_bottom.addWidget(btn_ajuste)
 
-        btn_refresh = QPushButton("⟳ Actualizar")
+        btn_refresh = QPushButton("Actualizar")
         btn_refresh.setCursor(Qt.PointingHandCursor)
         btn_refresh.clicked.connect(self.actualizar)
-        acciones_bottom.addWidget(btn_refresh, 1)
+        acciones_bottom.addWidget(btn_refresh)
 
         main_lay.addLayout(acciones_top)
         main_lay.addLayout(acciones_bottom)
@@ -402,6 +407,11 @@ class InventarioWidget(QWidget):
         self._build_tab_alertas_stock()
         self._build_tab_ganancias_ventas()
         self._build_tab_historial_ajustes()
+        normalizar_botones(self)
+        igualar_fila(acciones_top, btn_exp_pdf, btn_exp_xlsx,
+                     tipo="standard", max_ancho=180)
+        igualar_fila(acciones_bottom, btn_ajuste, btn_refresh,
+                     tipo="standard", max_ancho=180)
 
     def _crear_kpi_card(self, titulo: str, valor: str, subtitulo: str, color_valor: str, color_borde: str) -> QFrame:
         """Genera un componente visual tipo tarjeta métrica moderna."""
