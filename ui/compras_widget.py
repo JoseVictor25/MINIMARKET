@@ -1134,7 +1134,7 @@ class ComprasWidget(QWidget):
 
             btn_ver = QPushButton("👁 Ver")
             btn_ver.setCursor(Qt.PointingHandCursor)
-            btn_ver.setFixedHeight(32)
+            btn_ver.setFixedHeight(28)
             btn_ver.setMinimumWidth(88)
             btn_ver.setStyleSheet("""
                 QPushButton {
@@ -1145,6 +1145,8 @@ class ComprasWidget(QWidget):
                     font-size: 12px;
                     font-weight: 600;
                     padding: 0 12px;
+                    min-height: 0px;
+                    max-height: 28px;
                 }
                 QPushButton:hover {
                     background-color: #0284c7;
