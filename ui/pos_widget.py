@@ -3159,6 +3159,7 @@ class POSWidget(QWidget):
             pill_lay.setAlignment(Qt.AlignCenter)
 
             btn_minus = QPushButton("−")
+            btn_minus.setProperty("estilo_boton", "ignorar")
             btn_minus.setCursor(Qt.PointingHandCursor)
             btn_minus.setToolTip("Disminuir cantidad")
             btn_minus.setStyleSheet("""
@@ -3208,6 +3209,7 @@ class POSWidget(QWidget):
             pill_lay.addWidget(cant_label, 0, Qt.AlignCenter)
 
             btn_plus = QPushButton("+")
+            btn_plus.setProperty("estilo_boton", "ignorar")
             btn_plus.setCursor(Qt.PointingHandCursor)
             btn_plus.setToolTip("Aumentar cantidad")
             btn_plus.setStyleSheet("""
