@@ -4,6 +4,9 @@ Tema oscuro profesional - Slate and Teal.
 """
 from pathlib import Path
 
+from PyQt5.QtGui import QFont
+from PyQt5.QtWidgets import QPushButton, QSizePolicy, QTableWidget
+
 _CHECK_ICON_PATH = str(Path(__file__).resolve().parent.parent / "assets" / "check_white.png").replace("\\", "/")
 
 PALETTE = {
@@ -31,6 +34,72 @@ PALETTE = {
     "text_muted":    "#64748b",
     "white":         "#ffffff",
 }
+
+# Métricas únicas para botones. Los colores elegidos mantienen contraste AA
+# con texto blanco incluso en hover, pulsado y deshabilitado.
+BUTTON_METRICS = {
+    "standard": (40, 14, 16, 96),
+    "primary": (46, 16, 16, 120),
+    "compact": (32, 13, 10, 88),
+}
+BUTTON_COLORS = {
+    "standard": ("#334155", "#1e293b", "#0f172a"),
+    "primary": ("#075985", "#0c4a6e", "#082f49"),
+    "success": ("#166534", "#14532d", "#052e16"),
+    "danger": ("#991b1b", "#7f1d1d", "#450a0a"),
+    "warning": ("#92400e", "#78350f", "#451a03"),
+}
+
+
+def configurar_boton(boton: QPushButton, tipo: str = "standard", color: str | None = None):
+    """Aplica altura, ancho mínimo según texto y estados de alto contraste."""
+    alto, fuente, padding, minimo = BUTTON_METRICS[tipo]
+    fondo, hover, pulsado = BUTTON_COLORS[color or ("primary" if tipo == "primary" else "standard")]
+    peso = "bold" if tipo == "primary" else "600"
+    font = QFont(boton.font())
+    font.setPixelSize(fuente)
+    font.setBold(tipo == "primary")
+    boton.setFont(font)
+    boton.setStyleSheet(f"""
+        QPushButton {{ background: {fondo}; color: #ffffff; border: 1px solid #64748b;
+            border-radius: 7px; padding: 0 {padding}px; font-size: {fuente}px;
+            font-weight: {peso}; }}
+        QPushButton:hover {{ background: {hover}; color: #ffffff; }}
+        QPushButton:pressed {{ background: {pulsado}; color: #ffffff; }}
+        QPushButton:disabled {{ background: #374151; color: #f1f5f9;
+            border-color: #64748b; }}
+    """)
+    # Un setFixedWidth anterior deja también el máximo bloqueado.
+    boton.setMaximumWidth(16777215)
+    boton.setMinimumWidth(max(minimo if len(boton.text().strip()) > 1 else alto,
+                              boton.fontMetrics().horizontalAdvance(boton.text())
+                              + 2 * padding + (boton.iconSize().width() + 6 if not boton.icon().isNull() else 0)))
+    boton.setFixedHeight(alto)
+    boton.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+
+def normalizar_botones(contenedor):
+    """Clasifica botones iniciales y los creados al refrescar tablas."""
+    for boton in contenedor.findChildren(QPushButton):
+        if boton.property("estilo_boton") == "ignorar":
+            continue
+        texto = boton.text().casefold()
+        ancestro = boton.parentWidget()
+        en_tabla = False
+        while ancestro is not None and ancestro is not contenedor:
+            if isinstance(ancestro, QTableWidget):
+                en_tabla = True
+                break
+            ancestro = ancestro.parentWidget()
+        tipo = "compact" if en_tabla or boton.property("estilo_boton") == "compact" else (
+            "primary" if boton.property("estilo_boton") == "primary" or
+            any(palabra in texto for palabra in ("guardar", "registrar", "cobrar", "confirmar", "aceptar"))
+            else "standard"
+        )
+        color = "danger" if any(p in texto for p in ("quitar", "eliminar", "anular", "cerrar caja")) else (
+            "success" if tipo == "primary" else None
+        )
+        configurar_boton(boton, tipo, color)
 
 STYLESHEET = f"""
 QMainWindow, QDialog, QWidget {{
