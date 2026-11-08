@@ -56,8 +56,7 @@ class ReportesWidget(QWidget):
         lbl_tit = QLabel("REPORTES Y ESTADÍSTICAS DE VENTAS")
         lbl_tit.setFont(QFont("Segoe UI", 16, QFont.Bold))
         lbl_tit.setStyleSheet(f"color: {PALETTE['white']}; letter-spacing: 1px;")
-        top_bar.addWidget(lbl_tit)
-        top_bar.addStretch()
+        root.addWidget(lbl_tit)
 
         self.btn_export_excel = QPushButton("📊 Exportar Excel")
         self.btn_export_excel.setFixedHeight(36)
@@ -185,11 +184,14 @@ class ReportesWidget(QWidget):
         fechas.addWidget(self.date_hasta)
 
         # Selector de Cajero
-        fechas.addWidget(QLabel("Cajero:"))
+        f_lay.addLayout(fechas)
+        cajero_lay = QHBoxLayout()
+        cajero_lay.setSpacing(10)
+        cajero_lay.addWidget(QLabel("Cajero:"))
         self.combo_cajero = QComboBox()
         self.combo_cajero.addItem("👤 Todos los Cajeros", None)
         self._cargar_combo_cajeros()
-        fechas.addWidget(self.combo_cajero)
+        cajero_lay.addWidget(self.combo_cajero, 1)
 
         btn_filtrar = QPushButton("🔎 Filtrar")
         btn_filtrar.setStyleSheet(f"""
@@ -205,10 +207,9 @@ class ReportesWidget(QWidget):
             QPushButton:hover {{ background: {PALETTE['accent']}; }}
         """)
         btn_filtrar.clicked.connect(self.actualizar)
-        fechas.addWidget(btn_filtrar)
+        cajero_lay.addWidget(btn_filtrar)
 
-        fechas.addStretch()
-        f_lay.addLayout(fechas)
+        f_lay.addLayout(cajero_lay)
         root.addWidget(filtros_card)
 
         # ── 3. Fila de Tarjetas KPI (Indicadores Clave) ────────────────────────
@@ -264,8 +265,8 @@ class ReportesWidget(QWidget):
 
         kpis_grid.addWidget(self.kpi_ventas_card, 0, 0)
         kpis_grid.addWidget(self.kpi_ganancia_card, 0, 1)
-        kpis_grid.addWidget(self.kpi_ticket_card, 0, 2)
-        kpis_grid.addWidget(self.kpi_cant_card, 0, 3)
+        kpis_grid.addWidget(self.kpi_ticket_card, 1, 0)
+        kpis_grid.addWidget(self.kpi_cant_card, 1, 1)
         root.addLayout(kpis_grid)
 
         # ── 4. Pestañas de Análisis Detallado ──────────────────────────────────
