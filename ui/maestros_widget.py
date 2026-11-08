@@ -109,19 +109,19 @@ def _build_crud_tab(session, Modelo, campos: list, titulo: str):
     btn_row = QHBoxLayout()
     btn_ed = QPushButton("✏ Editar")
     btn_ed.clicked.connect(editar)
-    btn_row.addWidget(btn_ed, 1)
+    btn_row.addWidget(btn_ed)
 
     btn_del = QPushButton("🗑 Eliminar")
     btn_del.setObjectName("btn_danger")
     btn_del.clicked.connect(eliminar)
-    btn_row.addWidget(btn_del, 1)
+    btn_row.addWidget(btn_del)
     btn_row.addStretch()
     lay.addLayout(btn_row)
 
     cargar()
     normalizar_botones(tab)
     igualar_fila(btn_row, btn_ed, btn_del, tipo="standard",
-                 colores=("standard", "danger"))
+                 colores=("standard", "danger"), max_ancho=180)
     return tab, cargar
 
 
@@ -138,6 +138,8 @@ class _SimpleDialog(QDialog):
         self.setMinimumWidth(400)
         self._build_ui()
         normalizar_botones(self)
+        igualar_fila(self._btn_row, self._btn_cancel, self._btn_save,
+                     colores=("standard", "success"), max_ancho=200)
 
     def _build_ui(self):
         lay = QFormLayout(self)
@@ -153,6 +155,7 @@ class _SimpleDialog(QDialog):
             self.inputs[attr] = inp
 
         btn_row = QHBoxLayout()
+        btn_row.addStretch()
         btn_cancel = QPushButton("Cancelar")
         btn_cancel.clicked.connect(self.reject)
         btn_row.addWidget(btn_cancel)
@@ -161,6 +164,7 @@ class _SimpleDialog(QDialog):
         btn_save.setObjectName("btn_primary")
         btn_save.clicked.connect(self._guardar)
         btn_row.addWidget(btn_save)
+        self._btn_row, self._btn_cancel, self._btn_save = btn_row, btn_cancel, btn_save
 
         lay.addRow("", btn_row)
 
