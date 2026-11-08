@@ -10,7 +10,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.units import mm
@@ -532,4 +532,125 @@ def exportar_ventas_csv(
                     nit, cliente, metodo, cod, desc, cant, pu, sub, total_v
                 ])
 
+    return destino
+
+
+def exportar_ventas_xlsx(
+    session: Session,
+    fecha_inicio: datetime,
+    fecha_fin: datetime,
+    usuario_id: int | None = None,
+    destino: Path | None = None,
+) -> Path:
+    """
+    Exporta el detalle de todas las ventas del período a un archivo .xlsx real.
+
+    Mantiene las mismas columnas que la exportación CSV, pero con formato de
+    Excel: encabezados fijos, filtros, anchos automáticos y valores numéricos
+    reales (no texto), para que se puedan sumar y ordenar en Excel.
+    """
+    if destino is None:
+        rep_dir = Path("reportes")
+        rep_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        destino = rep_dir / f"export_ventas_{ts}.xlsx"
+    destino = Path(destino)
+    if destino.suffix.lower() != ".xlsx":
+        destino = destino.with_suffix(".xlsx")
+
+    query = (
+        session.query(Venta)
+        .options(
+            joinedload(Venta.usuario),
+            joinedload(Venta.cliente),
+            joinedload(Venta.detalles).joinedload(DetalleVenta.producto),
+        )
+        .filter(Venta.fecha >= fecha_inicio, Venta.fecha <= fecha_fin)
+        .filter(Venta.estado == Venta.ESTADO_COMPLETADA)
+        .order_by(Venta.fecha.desc())
+    )
+    if usuario_id:
+        query = query.filter(Venta.usuario_id == usuario_id)
+
+    ventas = query.all()
+
+    try:
+        import openpyxl
+        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        # Respaldo: si openpyxl no está instalado, se genera un CSV.
+        return exportar_ventas_csv(
+            session, fecha_inicio, fecha_fin, usuario_id,
+            destino.with_suffix(".csv"),
+        )
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Ventas Detalladas"
+
+    encabezados = [
+        "N° Transacción", "Fecha", "Hora", "Cajero",
+        "Cliente NIT", "Cliente Razón Social", "Método de Pago",
+        "Código de Barras", "Descripción Producto", "Cantidad",
+        "Precio Unitario (Bs)", "Subtotal (Bs)", "Total Venta (Bs)",
+    ]
+    ws.append(encabezados)
+
+    header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+    header_font = Font(color="FFFFFF", bold=True)
+    thin = Side(style="thin", color="CBD5E1")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    for col in range(1, len(encabezados) + 1):
+        cell = ws.cell(row=1, column=col)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = border
+
+    for v in ventas:
+        f_fecha = v.fecha.strftime("%d/%m/%Y")
+        f_hora = v.fecha.strftime("%H:%M:%S")
+        cajero = v.usuario.username if v.usuario else "Desconocido"
+        nit = v.cliente.nit if v.cliente else "0"
+        cliente = v.cliente.razon_social if v.cliente else "Público General"
+        metodo = v.metodo_pago
+        total_v = float(v.total_bs)
+
+        for d in v.detalles:
+            prod = d.producto
+            ws.append([
+                v.numero_transaccion, f_fecha, f_hora, cajero,
+                nit, cliente, metodo,
+                prod.codigo_barras if prod else "",
+                prod.descripcion if prod else "",
+                float(d.cantidad),
+                float(d.precio_unitario_bs),
+                float(d.subtotal_bs),
+                total_v,
+            ])
+
+    # Formatos numéricos y alineación
+    for fila in ws.iter_rows(min_row=2, max_row=ws.max_row):
+        for celda in fila:
+            celda.border = border
+        fila[9].number_format = "0.000"   # Cantidad
+        fila[10].number_format = "0.00"   # Precio unitario
+        fila[11].number_format = "0.00"   # Subtotal
+        fila[12].number_format = "0.00"   # Total venta
+
+    # Anchos de columna
+    anchos = {
+        1: 14, 2: 12, 3: 10, 4: 16, 5: 14, 6: 28, 7: 16,
+        8: 18, 9: 34, 10: 10, 11: 18, 12: 14, 13: 16,
+    }
+    for col, ancho in anchos.items():
+        ws.column_dimensions[get_column_letter(col)].width = ancho
+
+    ws.freeze_panes = "A2"
+    if ws.max_row >= 2:
+        ws.auto_filter.ref = f"A1:M{ws.max_row}"
+
+    wb.save(str(destino))
     return destino

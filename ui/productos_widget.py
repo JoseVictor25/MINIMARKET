@@ -20,7 +20,7 @@ from database import SessionLocal
 from models.producto import Producto
 from models.categoria import Categoria
 from config import CURRENCY
-from ui.styles import PALETTE
+from ui.styles import PALETTE, normalizar_botones
 from services.barcode_service import normalizar_codigo_barras, consultar_producto_online
 
 
@@ -51,8 +51,10 @@ class ProductoDialog(QDialog):
         self._worker_reconocimiento: ReconocimientoBarcodeWorker | None = None
 
         self.setWindowTitle("📦 Registrar Producto" if not producto else "✏ Editar Producto")
-        self.setFixedWidth(560)
+        self.setMinimumWidth(440)
+        self.resize(560, self.height())
         self._build_ui()
+        normalizar_botones(self)
 
         if producto:
             self._cargar_datos()
@@ -494,7 +496,7 @@ class ProductoDialog(QDialog):
             }
         """)
         btn_cancel.clicked.connect(self.reject)
-        btn_row.addWidget(btn_cancel, 4)
+        btn_row.addWidget(btn_cancel, 1)
 
         self.btn_save = QPushButton("💾 Guardar Producto")
         self.btn_save.setFixedHeight(44)
@@ -522,7 +524,7 @@ class ProductoDialog(QDialog):
             }}
         """)
         self.btn_save.clicked.connect(self._guardar)
-        btn_row.addWidget(self.btn_save, 6)
+        btn_row.addWidget(self.btn_save, 1)
 
         root.addLayout(btn_row)
 
@@ -746,12 +748,23 @@ class ProductoDialog(QDialog):
 class ProductosWidget(QWidget):
     """Panel de gestión de catálogo de productos."""
 
+    datos_actualizados = pyqtSignal(str)
+
     def __init__(self, usuario=None, parent=None):
         super().__init__(parent)
         self.usuario = usuario
         self.session = SessionLocal()
         self._build_ui()
         self._cargar_productos()
+        normalizar_botones(self)
+
+    def actualizar(self):
+        """Recarga el catálogo conservando el filtro de búsqueda actual."""
+        try:
+            self.session.expire_all()
+        except Exception:
+            pass
+        self._cargar_productos(self.input_buscar.text())
 
     def _build_ui(self):
         lay = QVBoxLayout(self)
@@ -810,12 +823,12 @@ class ProductosWidget(QWidget):
         btn_row = QHBoxLayout()
         btn_editar = QPushButton("✏ Editar")
         btn_editar.clicked.connect(self._editar_producto)
-        btn_row.addWidget(btn_editar)
+        btn_row.addWidget(btn_editar, 1)
 
         btn_toggle = QPushButton("🚫 Desactivar / Activar")
         btn_toggle.setObjectName("btn_warning")
         btn_toggle.clicked.connect(self._toggle_activo)
-        btn_row.addWidget(btn_toggle)
+        btn_row.addWidget(btn_toggle, 1)
 
         if not es_admin:
             btn_editar.hide()
@@ -893,11 +906,13 @@ class ProductosWidget(QWidget):
                 if dlg.exec():
                     self.input_buscar.clear()
                     self._cargar_productos()
+                    self.datos_actualizados.emit("producto")
 
     def _nuevo_producto(self):
         dlg = ProductoDialog(self.session, parent=self)
         if dlg.exec():
             self._cargar_productos(self.input_buscar.text())
+            self.datos_actualizados.emit("producto")
 
     def _editar_producto(self):
         row = self.tabla.currentRow()
@@ -909,6 +924,7 @@ class ProductosWidget(QWidget):
             dlg = ProductoDialog(self.session, prod, parent=self)
             if dlg.exec():
                 self._cargar_productos(self.input_buscar.text())
+                self.datos_actualizados.emit("producto")
 
     def _toggle_activo(self):
         row = self.tabla.currentRow()
@@ -920,6 +936,7 @@ class ProductosWidget(QWidget):
             prod.activo = not prod.activo
             self.session.commit()
             self._cargar_productos(self.input_buscar.text())
+            self.datos_actualizados.emit("producto")
 
     def closeEvent(self, event):
         self.session.close()

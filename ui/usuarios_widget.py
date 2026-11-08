@@ -23,7 +23,11 @@ from services.archivo_service import (
     eliminar_qr_usuario,
     resolver_ruta,
 )
-from ui.styles import PALETTE
+from services.usuario_service import (
+    detectar_duplicados_username,
+    username_disponible,
+)
+from ui.styles import PALETTE, normalizar_botones, igualar_fila
 
 
 class UsuarioDialog(QDialog):
@@ -36,7 +40,8 @@ class UsuarioDialog(QDialog):
 
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.setWindowTitle("Nuevo Usuario" if not usuario else f"Editar Usuario: {usuario.username}")
-        self.setFixedWidth(500)
+        self.setMinimumWidth(420)
+        self.resize(500, self.height())
         self.setModal(True)
         self._build_ui()
         if usuario:
@@ -291,7 +296,6 @@ class UsuarioDialog(QDialog):
         footer_lay = QHBoxLayout(footer)
         footer_lay.setContentsMargins(24, 14, 24, 16)
         footer_lay.setSpacing(12)
-        footer_lay.addStretch()
 
         btn_cancel = QPushButton("Cancelar")
         btn_cancel.setCursor(Qt.PointingHandCursor)
@@ -311,7 +315,7 @@ class UsuarioDialog(QDialog):
             }}
         """)
         btn_cancel.clicked.connect(self.reject)
-        footer_lay.addWidget(btn_cancel)
+        footer_lay.addWidget(btn_cancel, 1)
 
         btn_save = QPushButton("✓ Guardar Usuario")
         btn_save.setCursor(Qt.PointingHandCursor)
@@ -336,9 +340,12 @@ class UsuarioDialog(QDialog):
             }}
         """)
         btn_save.clicked.connect(self._guardar)
-        footer_lay.addWidget(btn_save)
+        footer_lay.addWidget(btn_save, 1)
 
         root.addWidget(footer)
+        normalizar_botones(self)
+        igualar_fila(footer_lay, btn_cancel, btn_save,
+                     colores=("standard", "success"))
 
     def _seleccionar_qr(self):
         arch, _ = QFileDialog.getOpenFileName(
@@ -395,10 +402,18 @@ class UsuarioDialog(QDialog):
             QMessageBox.warning(self, "Error", "Ingrese una contraseña para el nuevo usuario.")
             return
 
-        # Verificar duplicado
-        existente = self.session.query(Usuario).filter_by(username=username).first()
-        if existente and (not self.usuario or existente.id != self.usuario.id):
-            QMessageBox.warning(self, "Error", f"El usuario '{username}' ya existe.")
+        # Verificar duplicado sin distinguir mayúsculas/minúsculas.
+        # 'admin', 'ADMIN' y 'Admin' se consideran el mismo nombre.
+        excluir_id = self.usuario.id if self.usuario else None
+        if not username_disponible(self.session, username, excluir_id=excluir_id):
+            QMessageBox.warning(
+                self,
+                "Usuario duplicado",
+                f"Ya existe una cuenta con un nombre de usuario equivalente a '{username}'.\n\n"
+                "La comparación no distingue mayúsculas/minúsculas, por lo que "
+                "'admin', 'ADMIN' y 'Admin' se consideran el mismo usuario.\n"
+                "Elija un nombre de usuario diferente.",
+            )
             return
 
         # Obtener roles seleccionados
@@ -444,8 +459,10 @@ class UsuariosWidget(QWidget):
         super().__init__(parent)
         self.usuario_actual = usuario_actual
         self.session = SessionLocal()
+        self._aviso_duplicados_mostrado = False
         self._build_ui()
         self._cargar()
+        normalizar_botones(self)
 
     def _build_ui(self):
         lay = QVBoxLayout(self)
@@ -484,6 +501,7 @@ class UsuariosWidget(QWidget):
         lay.addLayout(btn_row)
 
     def _cargar(self):
+        self._advertir_duplicados()
         usuarios = self.session.query(Usuario).all()
         self.tabla.setRowCount(len(usuarios))
         for i, u in enumerate(usuarios):
@@ -503,6 +521,28 @@ class UsuariosWidget(QWidget):
                     it.setForeground(Qt.green)
                 self.tabla.setItem(i, j, it)
             self.tabla.item(i, 0).setData(Qt.UserRole, u.id)
+
+    def _advertir_duplicados(self):
+        """Informa una sola vez si ya existen usernames equivalentes en la BD."""
+        if self._aviso_duplicados_mostrado:
+            return
+        duplicados = detectar_duplicados_username(self.session)
+        if not duplicados:
+            return
+
+        self._aviso_duplicados_mostrado = True
+        detalle = "\n".join(
+            " · ".join(f"'{u.username}' (ID {u.id})" for u in usuarios)
+            for usuarios in duplicados.values()
+        )
+        QMessageBox.warning(
+            self,
+            "Usuarios duplicados detectados",
+            "Se encontraron nombres de usuario que solo difieren en mayúsculas/minúsculas:\n\n"
+            f"{detalle}\n\n"
+            "No se eliminó ni fusionó ningún registro. Corrija los nombres desde esta "
+            "pantalla para evitar inicios de sesión ambiguos.",
+        )
 
     def _nuevo(self):
         dlg = UsuarioDialog(self.session, parent=self)

@@ -7,16 +7,16 @@ import re
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
-from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
-from reportlab.pdfgen import canvas
 
 from config import APP_NAME, CURRENCY
 from models.caja import SesionCaja
 from models.venta import Venta
+from services.ticket_service import TicketLayout
 
 if TYPE_CHECKING:
     from models.usuario import Usuario
@@ -24,16 +24,76 @@ if TYPE_CHECKING:
 THERMAL_WIDTH = 80 * mm
 
 
-def obtener_caja_activa(session: Session, usuario_id: int | None = None) -> SesionCaja | None:
+class CajaYaAbiertaError(Exception):
+    """Se lanza cuando el usuario ya tiene una caja abierta.
+
+    Guarda una instantánea de datos primitivos (no objetos ORM) para que la
+    interfaz pueda informar el conflicto incluso después de cerrar la sesión.
     """
-    Obtiene la sesión de caja actualmente abierta.
-    Si se pasa usuario_id, busca exclusivamente la caja abierta por ese usuario.
-    Si usuario_id es None, devuelve la caja abierta más reciente en el sistema.
+
+    def __init__(self, cajas: list[SesionCaja]):
+        self.cajas = [
+            SimpleNamespace(
+                id=c.id,
+                turno=c.turno,
+                usuario_id=c.usuario_id,
+                monto_inicial_bs=c.monto_inicial_bs,
+            )
+            for c in cajas
+        ]
+        ids = ", ".join(f"#{c.id}" for c in self.cajas)
+        super().__init__(
+            f"El usuario ya tiene {len(self.cajas)} caja(s) abierta(s): {ids}. "
+            "Debe continuar con la caja existente o cerrarla antes de abrir otra."
+        )
+
+
+class CajaNoAutorizadaError(Exception):
+    """Se lanza cuando un usuario intenta operar una caja que no le pertenece."""
+
+
+def cajas_abiertas_usuario(session: Session, usuario_id: int) -> list[SesionCaja]:
+    """Retorna las cajas abiertas de un usuario, de la más reciente a la más antigua."""
+    return (
+        session.query(SesionCaja)
+        .filter(
+            SesionCaja.estado == SesionCaja.ESTADO_ABIERTA,
+            SesionCaja.usuario_id == usuario_id,
+        )
+        .order_by(SesionCaja.id.desc())
+        .all()
+    )
+
+
+def cajas_abiertas(session: Session) -> list[SesionCaja]:
+    """Retorna todas las cajas abiertas del sistema (consulta de supervisión)."""
+    return (
+        session.query(SesionCaja)
+        .filter(SesionCaja.estado == SesionCaja.ESTADO_ABIERTA)
+        .order_by(SesionCaja.id.desc())
+        .all()
+    )
+
+
+def obtener_caja_activa(session: Session, usuario_id: int) -> SesionCaja | None:
     """
-    query = session.query(SesionCaja).filter(SesionCaja.estado == SesionCaja.ESTADO_ABIERTA)
-    if usuario_id is not None:
-        query = query.filter(SesionCaja.usuario_id == usuario_id)
-    return query.order_by(SesionCaja.id.desc()).first()
+    Obtiene la caja operativa de un usuario.
+
+    Siempre filtra por usuario y estado abierto. No existe una búsqueda
+    implícita de la caja de otro usuario: para supervisión administrativa
+    deben usarse explícitamente cajas_abiertas() o cajas_abiertas_usuario().
+    """
+    if usuario_id is None:
+        raise ValueError("obtener_caja_activa requiere el usuario_id del propietario.")
+    return (
+        session.query(SesionCaja)
+        .filter(
+            SesionCaja.estado == SesionCaja.ESTADO_ABIERTA,
+            SesionCaja.usuario_id == usuario_id,
+        )
+        .order_by(SesionCaja.id.desc())
+        .first()
+    )
 
 
 def abrir_caja(
@@ -45,8 +105,15 @@ def abrir_caja(
     observacion: str | None = None,
 ) -> SesionCaja:
     """
-    Abre una nueva sesión de caja.
+    Abre una nueva sesión de caja para un usuario.
+
+    Regla de negocio: un usuario no puede tener más de una caja abierta.
+    No se cierran ni modifican cajas existentes automáticamente.
     """
+    existentes = cajas_abiertas_usuario(session, usuario_id)
+    if existentes:
+        raise CajaYaAbiertaError(existentes)
+
     monto_dec = Decimal(str(monto_inicial_bs or "0.00"))
 
     nueva_caja = SesionCaja(
@@ -113,6 +180,7 @@ def obtener_resumen_caja(session: Session, sesion_caja_id: int) -> dict:
 
     return {
         "sesion_id": sesion.id,
+        "usuario_id": sesion.usuario_id,
         "usuario_nombre": sesion.usuario.nombre_completo if sesion.usuario else "Desconocido",
         "usuario_username": sesion.usuario.username if sesion.usuario else "",
         "turno": sesion.turno,
@@ -135,13 +203,26 @@ def cerrar_caja(
     sesion_caja_id: int,
     monto_fisico_bs: Decimal | float | str,
     observacion: str | None = None,
+    *,
+    usuario_id: int,
 ) -> tuple[SesionCaja, dict]:
     """
     Cierra la sesión de caja registrando el arqueo físico y calculando sobrante/faltante.
+
+    Solo el propietario de la caja puede cerrarla. No se implementa cierre
+    forzado de cajas ajenas desde el flujo normal.
     """
     sesion = session.get(SesionCaja, sesion_caja_id)
     if not sesion:
         raise ValueError(f"No existe sesión de caja #{sesion_caja_id}")
+    if usuario_id is None:
+        raise CajaNoAutorizadaError("Se requiere el usuario autenticado para cerrar una caja.")
+    if sesion.usuario_id != usuario_id:
+        raise CajaNoAutorizadaError(
+            f"La caja #{sesion_caja_id} pertenece a otro usuario y no puede cerrarse desde este flujo."
+        )
+    if sesion.estado != SesionCaja.ESTADO_ABIERTA:
+        raise ValueError(f"La caja #{sesion_caja_id} no está abierta.")
 
     resumen = obtener_resumen_caja(session, sesion_caja_id)
     monto_fisico_dec = Decimal(str(monto_fisico_bs or "0.00"))
@@ -152,86 +233,61 @@ def cerrar_caja(
     sesion.diferencia_bs = diferencia
     sesion.estado = SesionCaja.ESTADO_CERRADA
     if observacion:
-        sesion.observacion = observacion
+        sesion.observacion_cierre = observacion
 
     session.flush()
     return sesion, resumen
 
 
-def generar_ticket_arqueo_pdf(
+def construir_layout_arqueo(
     session: Session,
     sesion_caja_id: int,
-    destino: Path | None = None,
-) -> Path:
+    observacion: str | None = None,
+) -> TicketLayout:
     """
-    Genera un comprobante térmico (80mm) con el detalle del arqueo y cierre de caja.
+    Construye el layout del ticket de arqueo. La observación puede pasarse
+    explícitamente (por ejemplo, antes de confirmar el cierre) o tomarse de la
+    sesión (observación de cierre o, en su defecto, de apertura).
     """
     resumen = obtener_resumen_caja(session, sesion_caja_id)
     sesion = session.get(SesionCaja, sesion_caja_id)
+    if not sesion:
+        raise ValueError(f"No existe sesión de caja #{sesion_caja_id}")
 
-    if destino is None:
-        tickets_dir = Path("tickets")
-        tickets_dir.mkdir(parents=True, exist_ok=True)
-        destino = tickets_dir / f"arqueo_caja_{sesion_caja_id}.pdf"
+    if observacion is None:
+        observacion = getattr(sesion, "observacion_cierre", None) or sesion.observacion
 
-    # Altura del ticket
-    altura = 190 * mm
-    c = canvas.Canvas(str(destino), pagesize=(THERMAL_WIDTH, altura))
-
-    y = altura - 8 * mm
-    ancho = THERMAL_WIDTH - 6 * mm
-    cx = THERMAL_WIDTH / 2
-
-    def nl(pasos=1):
-        nonlocal y
-        y -= pasos * 4.5 * mm
+    layout = TicketLayout()
 
     # Encabezado
-    c.setFont("Helvetica-Bold", 11)
-    c.drawCentredString(cx, y, APP_NAME)
-    nl()
-    c.setFont("Helvetica-Bold", 9)
-    c.drawCentredString(cx, y, "CONTROL Y ARQUEO DE CAJA")
-    nl()
-    c.setFont("Helvetica", 8)
-    c.drawCentredString(cx, y, f"Sesión #{sesion.id} - Turno: {sesion.turno}")
-    nl()
-    c.drawCentredString(cx, y, datetime.now().strftime("%d/%m/%Y %H:%M"))
-    nl()
+    layout.text(APP_NAME, "Helvetica-Bold", 11, align="center")
+    layout.text("CONTROL Y ARQUEO DE CAJA", "Helvetica-Bold", 9, align="center")
+    layout.text(f"Sesión #{sesion.id} - Turno: {sesion.turno}", "Helvetica", 8, align="center")
+    layout.text(datetime.now().strftime("%d/%m/%Y %H:%M"), "Helvetica", 8, align="center")
+    layout.line(x1=3 * mm, x2=THERMAL_WIDTH - 3 * mm, width=0.5)
 
-    c.setLineWidth(0.5)
-    c.line(3 * mm, y, THERMAL_WIDTH - 3 * mm, y)
-    nl()
-
-    # Datos Generales
-    c.setFont("Helvetica", 8)
-    c.drawString(4 * mm, y, f"Cajero: {resumen['usuario_nombre']} ({resumen['usuario_username']})")
-    nl()
+    # Datos generales
+    layout.text(
+        f"Cajero: {resumen['usuario_nombre']} ({resumen['usuario_username']})",
+        "Helvetica", 8, x=4 * mm, max_width=THERMAL_WIDTH - 8 * mm,
+    )
     f_ap = resumen['fecha_apertura'].strftime("%d/%m/%Y %H:%M") if resumen['fecha_apertura'] else "-"
-    c.drawString(4 * mm, y, f"Apertura: {f_ap}")
-    nl()
+    layout.text(f"Apertura: {f_ap}", "Helvetica", 8, x=4 * mm)
     f_ci = resumen['fecha_cierre'].strftime("%d/%m/%Y %H:%M") if resumen['fecha_cierre'] else datetime.now().strftime("%d/%m/%Y %H:%M")
-    c.drawString(4 * mm, y, f"Cierre:   {f_ci}")
-    nl()
-    c.drawString(4 * mm, y, f"Transacciones: {resumen['cantidad_ventas']} ventas")
-    nl()
-
-    c.line(3 * mm, y, THERMAL_WIDTH - 3 * mm, y)
-    nl()
+    layout.text(f"Cierre:   {f_ci}", "Helvetica", 8, x=4 * mm)
+    layout.text(f"Transacciones: {resumen['cantidad_ventas']} ventas", "Helvetica", 8, x=4 * mm)
+    layout.line(x1=3 * mm, x2=THERMAL_WIDTH - 3 * mm, width=0.5)
 
     # Desglose de ingresos
     def fila(label: str, valor: Decimal, negrita: bool = False):
-        if negrita:
-            c.setFont("Helvetica-Bold", 8.5)
-        else:
-            c.setFont("Helvetica", 8)
-        c.drawString(4 * mm, y, label)
-        c.drawRightString(THERMAL_WIDTH - 4 * mm, y, f"{CURRENCY} {valor:.2f}")
-        nl()
+        layout.fila(
+            label, f"{CURRENCY} {valor:.2f}",
+            "Helvetica-Bold" if negrita else "Helvetica",
+            8.5 if negrita else 8,
+            x=4 * mm, x_right=THERMAL_WIDTH - 4 * mm,
+        )
 
-    c.setFont("Helvetica-Bold", 8.5)
-    c.drawString(4 * mm, y, "DESGLOSE DE VENTAS")
-    nl()
+    layout.text("DESGLOSE DE VENTAS", "Helvetica-Bold", 8.5, x=4 * mm)
     fila("(+) Base Apertura:", resumen["base_inicial"])
     fila("(+) Ventas Efectivo:", resumen["ventas_efectivo"])
     fila("    Ventas QR:", resumen["ventas_qr"])
@@ -239,18 +295,12 @@ def generar_ticket_arqueo_pdf(
     if resumen["ventas_otros"] > 0:
         fila("    Otros Medios:", resumen["ventas_otros"])
 
-    c.line(3 * mm, y, THERMAL_WIDTH - 3 * mm, y)
-    nl()
+    layout.line(x1=3 * mm, x2=THERMAL_WIDTH - 3 * mm, width=0.5)
     fila("TOTAL VENTAS:", resumen["total_ventas"], negrita=True)
-    nl(0.5)
+    layout.line(x1=3 * mm, x2=THERMAL_WIDTH - 3 * mm, width=0.5)
 
-    c.line(3 * mm, y, THERMAL_WIDTH - 3 * mm, y)
-    nl()
-
-    # Resumen Arqueo
-    c.setFont("Helvetica-Bold", 8.5)
-    c.drawString(4 * mm, y, "ARQUEO DE EFECTIVO")
-    nl()
+    # Resumen de arqueo
+    layout.text("ARQUEO DE EFECTIVO", "Helvetica-Bold", 8.5, x=4 * mm)
     fila("Efectivo Esperado:", resumen["total_efectivo_esperado"], negrita=True)
 
     monto_fisico = sesion.monto_final_efectivo_bs if sesion.monto_final_efectivo_bs is not None else resumen["total_efectivo_esperado"]
@@ -265,20 +315,45 @@ def generar_ticket_arqueo_pdf(
     else:
         estado_dif = f"Diferencia: -Bs {abs(diferencia):.2f} (FALTANTE)"
 
-    c.setFont("Helvetica-Bold", 8.5)
-    c.drawCentredString(cx, y, estado_dif)
-    nl(2)
+    layout.gap(1)
+    layout.text(estado_dif, "Helvetica-Bold", 8.5, align="center")
 
-    # Firmas
-    c.line(8 * mm, y, 36 * mm, y)
-    c.line(44 * mm, y, 72 * mm, y)
-    nl()
-    c.setFont("Helvetica", 7)
-    c.drawCentredString(22 * mm, y, "Firma Cajero")
-    c.drawCentredString(58 * mm, y, "Firma Supervisor")
-    nl(2)
+    # Observación del arqueo (si existe)
+    if observacion:
+        layout.gap(1)
+        layout.text("OBSERVACIÓN:", "Helvetica-Bold", 8, x=4 * mm)
+        layout.text(
+            observacion, "Helvetica", 7, x=4 * mm,
+            max_width=THERMAL_WIDTH - 8 * mm,
+        )
 
-    c.drawCentredString(cx, y, "*** REPORTE OFICIAL DE CAJA ***")
+    # Firmas y pie
+    layout.gap(2)
+    layout.firmas()
+    layout.gap(2)
+    layout.text("*** REPORTE OFICIAL DE CAJA ***", "Helvetica", 7, align="center")
+    return layout
 
+
+def generar_ticket_arqueo_pdf(
+    session: Session,
+    sesion_caja_id: int,
+    destino: Path | None = None,
+    observacion: str | None = None,
+) -> Path:
+    """
+    Genera un comprobante térmico (80mm) con el detalle del arqueo y cierre de caja.
+    """
+    from reportlab.pdfgen import canvas
+
+    layout = construir_layout_arqueo(session, sesion_caja_id, observacion=observacion)
+
+    if destino is None:
+        tickets_dir = Path("tickets")
+        tickets_dir.mkdir(parents=True, exist_ok=True)
+        destino = tickets_dir / f"arqueo_caja_{sesion_caja_id}.pdf"
+
+    c = canvas.Canvas(str(destino), pagesize=(THERMAL_WIDTH, layout.altura()))
+    layout.dibujar(c)
     c.save()
     return destino

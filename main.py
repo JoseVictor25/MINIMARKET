@@ -8,6 +8,7 @@ Flujo:
 """
 import sys
 
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QFont
 
@@ -20,6 +21,16 @@ from ui.main_window import MainWindow
 def main():
     # ── Inicializar base de datos ─────────────────────────────────────────────
     init_db()
+
+    # ── Soporte de pantallas de alta densidad ────────────────────────────────
+    # Debe configurarse ANTES de crear QApplication. Permite que la interfaz se
+    # adapte a escalados de Windows (100 %, 125 %, 150 %, etc.) sin recortes.
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    if hasattr(QApplication, "setHighDpiScaleFactorRoundingPolicy"):
+        QApplication.setHighDpiScaleFactorRoundingPolicy(
+            Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+        )
 
     # ── Crear aplicación Qt ───────────────────────────────────────────────────
     app = QApplication(sys.argv)
@@ -44,10 +55,13 @@ def main():
     if args.user or args.rol:
         from database import SessionLocal
         from models.usuario import Usuario
+        from services.usuario_service import usuario_unico_por_username
         s = SessionLocal()
         try:
             if args.user:
-                auto_usuario = s.query(Usuario).filter_by(username=args.user, activo=True).first()
+                # Mismo criterio que el login: no distingue mayúsculas/minúsculas.
+                # Si el username es ambiguo, no se auto-inicia sesión.
+                auto_usuario = usuario_unico_por_username(s, args.user)
             elif args.rol:
                 auto_usuario = s.query(Usuario).filter_by(rol=args.rol, activo=True).first()
             if auto_usuario:

@@ -15,6 +15,7 @@ from database import SessionLocal
 from models.cliente import Cliente
 from models.proveedor import Proveedor
 from models.categoria import Categoria
+from ui.styles import normalizar_botones, igualar_fila
 
 
 def _build_crud_tab(session, Modelo, campos: list, titulo: str):
@@ -82,7 +83,8 @@ def _build_crud_tab(session, Modelo, campos: list, titulo: str):
 
     buscar_input = QLineEdit()
     buscar_input.setPlaceholderText("🔍 Buscar...")
-    buscar_input.setFixedWidth(220)
+    buscar_input.setMinimumWidth(150)
+    buscar_input.setMaximumWidth(260)
     buscar_input.textChanged.connect(cargar)
     hdr.addWidget(buscar_input)
 
@@ -107,16 +109,19 @@ def _build_crud_tab(session, Modelo, campos: list, titulo: str):
     btn_row = QHBoxLayout()
     btn_ed = QPushButton("✏ Editar")
     btn_ed.clicked.connect(editar)
-    btn_row.addWidget(btn_ed)
+    btn_row.addWidget(btn_ed, 1)
 
     btn_del = QPushButton("🗑 Eliminar")
     btn_del.setObjectName("btn_danger")
     btn_del.clicked.connect(eliminar)
-    btn_row.addWidget(btn_del)
+    btn_row.addWidget(btn_del, 1)
     btn_row.addStretch()
     lay.addLayout(btn_row)
 
     cargar()
+    normalizar_botones(tab)
+    igualar_fila(btn_row, btn_ed, btn_del, tipo="standard",
+                 colores=("standard", "danger"))
     return tab, cargar
 
 
@@ -132,6 +137,7 @@ class _SimpleDialog(QDialog):
         self.setWindowTitle(f"{'Editar' if registro else 'Nuevo'} {titulo}")
         self.setMinimumWidth(400)
         self._build_ui()
+        normalizar_botones(self)
 
     def _build_ui(self):
         lay = QFormLayout(self)

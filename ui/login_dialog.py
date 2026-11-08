@@ -5,16 +5,19 @@ Diseño moderno réplica exacta del mockup oficial.
 from __future__ import annotations
 
 from pathlib import Path
+from ui.styles import normalizar_botones, configurar_boton
 
 from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve, QPoint, QSize
 from PyQt5.QtGui import QPixmap, QIcon, QPainter, QColor
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QFrame, QWidget,
+    QMessageBox,
 )
 
 from database import SessionLocal
 from models.usuario import Usuario
+from services.usuario_service import autenticar_usuario, UsernameAmbiguoError
 from config import (
     APP_NAME, SLOGAN, SLOGAN_COLOR, BRAND_COLOR, BRAND_TEXT_COLOR,
     get_brand_hover, get_brand_dark, get_brand_text_color,
@@ -88,8 +91,10 @@ class LoginDialog(QDialog):
         super().__init__(parent)
         self.usuario_autenticado: Usuario | None = None
         self._build_ui()
+        normalizar_botones(self)
+        configurar_boton(self.btn_login, "primary", "brand")
         self.setWindowTitle(f"{APP_NAME} – Iniciar Sesión")
-        h = 550 if SLOGAN else 520
+        h = 590 if SLOGAN else 550
         self.setFixedSize(400, h)
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
 
@@ -129,7 +134,7 @@ class LoginDialog(QDialog):
             if p.is_file():
                 pix = QPixmap(str(p))
                 if not pix.isNull():
-                    lbl_logo.setPixmap(pix.scaled(220, 84, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                    lbl_logo.setPixmap(pix.scaled(280, 145, Qt.KeepAspectRatio, Qt.SmoothTransformation))
                     layout.addWidget(lbl_logo)
                     logo_cargado = True
                     break
@@ -238,6 +243,7 @@ class LoginDialog(QDialog):
         pass_layout.addStretch()
 
         self.btn_toggle_pass = QPushButton()
+        self.btn_toggle_pass.setProperty("estilo_boton", "ignorar")
         self.btn_toggle_pass.setFocusPolicy(Qt.NoFocus)
         self.btn_toggle_pass.setCursor(Qt.PointingHandCursor)
         self.btn_toggle_pass.setFixedSize(30, 30)
@@ -289,6 +295,7 @@ class LoginDialog(QDialog):
 
         # ── Botón Ingresar ────────────────────────────────────────────
         btn = QPushButton(LOGIN_BTN_TEXT)
+        self.btn_login = btn
         btn.setObjectName("btn_primary")
         btn.setCursor(Qt.PointingHandCursor)
         btn.setFixedHeight(48)
@@ -347,8 +354,27 @@ class LoginDialog(QDialog):
 
         session = SessionLocal()
         try:
-            usuario = session.query(Usuario).filter_by(username=username, activo=True).first()
-            if usuario and usuario.verificar_password(password):
+            try:
+                usuario = autenticar_usuario(session, username, password)
+            except UsernameAmbiguoError as e:
+                # No se autentica ninguna cuenta si el username es ambiguo:
+                # evita iniciar sesión accidentalmente en otra cuenta.
+                self._show_error("✖  Nombre de usuario ambiguo. Contacte al administrador.")
+                QMessageBox.warning(
+                    self,
+                    "Conflicto de usuarios",
+                    "No se puede iniciar sesión porque existen varias cuentas cuyo "
+                    "nombre de usuario coincide ignorando mayúsculas/minúsculas.\n\n"
+                    f"{e}\n\n"
+                    "Un administrador debe corregir el nombre duplicado. "
+                    "No se modificó ningún registro.",
+                )
+                self.input_pass.clear()
+                self.input_pass.setFocus()
+                self._shake()
+                return
+
+            if usuario:
                 self.usuario_autenticado = usuario
                 session.expunge(usuario)
                 self.accept()

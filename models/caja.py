@@ -45,6 +45,9 @@ class SesionCaja(Base):
     _diferencia_c: Mapped[int | None] = mapped_column("diferencia_c", Integer, nullable=True)
 
     observacion: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # Nota ingresada al cerrar/arquear la caja. Se conserva separada de la
+    # observación de apertura para no sobrescribirla.
+    observacion_cierre: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
     # Relaciones
     usuario = relationship("Usuario")

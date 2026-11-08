@@ -202,10 +202,19 @@ def lanzar_cierre():
     try:
         ses = s.query(SesionCaja).order_by(SesionCaja.id.desc()).first()
         ses_id = ses.id if ses else 1
+        usuario = ses.usuario if ses else None
+        if usuario is not None:
+            s.expunge(usuario)
+        if ses is not None:
+            s.expunge(ses)
     finally:
         s.close()
 
-    dlg = CierreCajaDialog(sesion_caja_id=ses_id)
+    if usuario is None:
+        print("[INFO] No hay sesión de caja con propietario para previsualizar.")
+        return
+
+    dlg = CierreCajaDialog(sesion_caja_id=ses_id, usuario=usuario)
     dlg.exec_()
 
 

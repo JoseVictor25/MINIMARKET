@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QComboBox,
     QDateEdit, QFrame, QMessageBox, QTextEdit,
-    QScrollArea, QWidget, QStyledItemDelegate,
+    QScrollArea, QWidget, QStyledItemDelegate, QApplication,
 )
 from PyQt5.QtGui import QFont, QDoubleValidator
 
@@ -26,16 +26,25 @@ from services.caja_service import (
     obtener_resumen_caja,
     cerrar_caja,
     generar_ticket_arqueo_pdf,
+    construir_layout_arqueo,
+    CajaYaAbiertaError,
 )
+from services.print_service import imprimir_layout
 from config import CURRENCY, APP_NAME
-from ui.styles import PALETTE, configurar_calendario_elegante
+from ui.styles import PALETTE, configurar_calendario_elegante, normalizar_botones
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  FORMULARIO DE APERTURA DE CAJA
 # ══════════════════════════════════════════════════════════════════════════════
 
-class AperturaCajaDialog(QDialog):
+class _BotonesCaja:
+    def showEvent(self, event):
+        super().showEvent(event)
+        normalizar_botones(self)
+
+
+class AperturaCajaDialog(_BotonesCaja, QDialog):
     """
     Formulario de Apertura de Caja.
     Replica la distribución exacta solicitada:
@@ -303,18 +312,19 @@ class AperturaCajaDialog(QDialog):
         root.addLayout(btn_bar)
 
     def _cargar_cajeros(self):
-        """Carga los usuarios activos y preselecciona al usuario actual."""
-        with get_session() as session:
-            usuarios = session.query(Usuario).filter(Usuario.activo == True).order_by(Usuario.nombre_completo).all()
-            self.combo_cajero.clear()
-            idx_seleccion = 0
-            for i, u in enumerate(usuarios):
-                self.combo_cajero.addItem(f"👤  {u.nombre_completo} ({u.username})", u.id)
-                if u.id == self.usuario_actual.id:
-                    idx_seleccion = i
-
-            if self.combo_cajero.count() > 0:
-                self.combo_cajero.setCurrentIndex(idx_seleccion)
+        """Muestra únicamente al usuario autenticado como propietario de la caja."""
+        self.combo_cajero.clear()
+        if self.usuario_actual and self.usuario_actual.id:
+            self.combo_cajero.addItem(
+                f"👤  {self.usuario_actual.nombre_completo} ({self.usuario_actual.username})",
+                self.usuario_actual.id,
+            )
+            self.combo_cajero.setCurrentIndex(0)
+            self.combo_cajero.setEnabled(False)
+            self.combo_cajero.setToolTip(
+                "Cada usuario abre únicamente su propia caja. "
+                "La supervisión de cajas ajenas se realiza desde el historial."
+            )
 
     def _cancelar(self):
         """Limpia los campos a valores por defecto."""
@@ -339,9 +349,13 @@ class AperturaCajaDialog(QDialog):
             self.input_total_bs.setFocus()
             return
 
-        usuario_id = self.combo_cajero.currentData()
+        usuario_id = getattr(self.usuario_actual, "id", None)
         if not usuario_id:
-            QMessageBox.warning(self, "Cajero Requerido", "Debe seleccionar un cajero.")
+            QMessageBox.warning(
+                self,
+                "Usuario Requerido",
+                "No se pudo identificar al usuario autenticado para abrir la caja.",
+            )
             return
 
         turno = self.combo_turno.currentData() or self.combo_turno.currentText()
@@ -371,6 +385,24 @@ class AperturaCajaDialog(QDialog):
             )
             dlg_exito.exec_()
             self.accept()
+        except CajaYaAbiertaError as e:
+            caja = e.cajas[0]
+            if len(e.cajas) == 1:
+                mensaje = (
+                    f"Ya tienes una caja abierta (#{caja.id}, turno {caja.turno}).\n\n"
+                    "No se abrió una nueva caja. Puedes continuar trabajando con la existente."
+                )
+            else:
+                ids = ", ".join(f"#{c.id}" for c in e.cajas)
+                mensaje = (
+                    f"Se detectaron {len(e.cajas)} cajas abiertas para tu usuario: {ids}.\n\n"
+                    f"No se abrió una nueva. Se utilizará la más reciente (#{caja.id}).\n\n"
+                    "Por seguridad, cierra las cajas adicionales desde el historial antes de continuar. "
+                    "El sistema no cierra ni modifica cajas automáticamente."
+                )
+            QMessageBox.information(self, "Caja ya abierta", mensaje)
+            self.sesion_creada = caja
+            self.accept()
         except Exception as e:
             QMessageBox.critical(self, "Error al Abrir Caja", f"No se pudo registrar la apertura de caja:\n{e}")
 
@@ -379,7 +411,7 @@ class AperturaCajaDialog(QDialog):
 #  MODALES MODERNOS DE CONFIRMACIÓN Y ÉXITO DE APERTURA DE CAJA
 # ══════════════════════════════════════════════════════════════════════════════
 
-class AperturaExitosaDialog(QDialog):
+class AperturaExitosaDialog(_BotonesCaja, QDialog):
     """Modal de confirmación visual y elegante tras abrir caja con éxito."""
 
     def __init__(self, cajero_nombre: str, turno: str, monto_inicial: Decimal, fecha_str: str, parent=None):
@@ -492,7 +524,7 @@ class AperturaExitosaDialog(QDialog):
         root.addWidget(footer)
 
 
-class ConfirmarAperturaPromptDialog(QDialog):
+class ConfirmarAperturaPromptDialog(_BotonesCaja, QDialog):
     """Diálogo modal moderno que solicita al usuario abrir caja antes de registrar ventas."""
 
     def __init__(self, usuario: Usuario, parent=None):
@@ -615,7 +647,7 @@ class ConfirmarAperturaPromptDialog(QDialog):
 #  MODAL DE CONFIRMACIÓN AMIGABLE DE CIERRE DE CAJA
 # ══════════════════════════════════════════════════════════════════════════════
 
-class ConfirmarCierreDialog(QDialog):
+class ConfirmarCierreDialog(_BotonesCaja, QDialog):
     """
     Diálogo modal de confirmación con diseño estético premium,
     resumen visual de cifras y botones claros en español.
@@ -824,26 +856,43 @@ class ConfirmarCierreDialog(QDialog):
 #  FORMULARIO DE CIERRE Y ARQUEO DE CAJA
 # ══════════════════════════════════════════════════════════════════════════════
 
-class CierreCajaDialog(QDialog):
+class CierreCajaDialog(_BotonesCaja, QDialog):
     """
     Formulario de Arqueo y Cierre de Caja con diseño espacioso,
     tipografía de alta legibilidad y prevención de compresión de texto.
     """
 
-    def __init__(self, sesion_caja_id: int, parent=None):
+    def __init__(self, sesion_caja_id: int, usuario: Usuario, parent=None):
         super().__init__(parent)
         self.sesion_caja_id = sesion_caja_id
+        self.usuario = usuario
         self.resumen: dict = {}
         self.diferencia = Decimal("0.00")
         self.cierre_completado = False
 
         self.setWindowTitle("Control y Arqueo de Caja – Cierre de Turno")
-        self.setMinimumSize(660, 720)
-        self.resize(680, 760)
+        # El contenido principal va dentro de un scroll; el diálogo puede ser
+        # más bajo sin que se recorte el botón de confirmación.
+        self.setMinimumSize(620, 560)
+        self.resize(680, 720)
         self.setModal(True)
         self._cargar_datos()
         self._build_ui()
         self._actualizar_arqueo()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        try:
+            pantalla = self.screen() or QApplication.primaryScreen()
+            disp = pantalla.availableGeometry()
+            ancho = min(max(self.width(), self.minimumWidth()), int(disp.width() * 0.94))
+            alto = min(max(self.height(), self.minimumHeight()), int(disp.height() * 0.94))
+            self.resize(ancho, alto)
+            x = disp.x() + (disp.width() - ancho) // 2
+            y = disp.y() + (disp.height() - alto) // 2
+            self.move(max(disp.x(), x), max(disp.y(), y))
+        except Exception:
+            pass
 
     def _cargar_datos(self):
         with get_session() as session:
@@ -1108,10 +1157,11 @@ class CierreCajaDialog(QDialog):
 
         # ── 4. Botonera Inferior Fija (Siempre visible) ────────────────────────
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(12)
+        btn_row.setSpacing(10)
 
         self.btn_imprimir = QPushButton("📄  Ticket de Arqueo")
         self.btn_imprimir.setFixedHeight(46)
+        self.btn_imprimir.setMinimumWidth(130)
         self.btn_imprimir.setCursor(Qt.PointingHandCursor)
         self.btn_imprimir.setStyleSheet(f"""
             QPushButton {{
@@ -1129,12 +1179,23 @@ class CierreCajaDialog(QDialog):
             }}
         """)
         self.btn_imprimir.clicked.connect(self._imprimir_arqueo)
-        btn_row.addWidget(self.btn_imprimir)
+        btn_row.addWidget(self.btn_imprimir, 1)
 
-        btn_row.addStretch()
+        self.btn_imprimir_directo = QPushButton("🖨  Imprimir Arqueo")
+        self.btn_imprimir_directo.setFixedHeight(46)
+        self.btn_imprimir_directo.setMinimumWidth(130)
+        self.btn_imprimir_directo.setCursor(Qt.PointingHandCursor)
+        self.btn_imprimir_directo.setStyleSheet(self.btn_imprimir.styleSheet())
+        self.btn_imprimir_directo.clicked.connect(self._imprimir_arqueo_directo)
+        btn_row.addWidget(self.btn_imprimir_directo, 1)
+
+        root.addLayout(btn_row)
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(10)
 
         self.btn_cancelar = QPushButton("Cancelar")
         self.btn_cancelar.setFixedHeight(46)
+        self.btn_cancelar.setMinimumWidth(100)
         self.btn_cancelar.setCursor(Qt.PointingHandCursor)
         self.btn_cancelar.setStyleSheet(f"""
             QPushButton {{
@@ -1152,10 +1213,11 @@ class CierreCajaDialog(QDialog):
             }}
         """)
         self.btn_cancelar.clicked.connect(self.reject)
-        btn_row.addWidget(self.btn_cancelar)
+        btn_row.addWidget(self.btn_cancelar, 1)
 
-        self.btn_cerrar = QPushButton("🔒  Confirmar Cierre de Caja")
+        self.btn_cerrar = QPushButton("Confirmar cierre")
         self.btn_cerrar.setFixedHeight(46)
+        self.btn_cerrar.setMinimumWidth(135)
         self.btn_cerrar.setCursor(Qt.PointingHandCursor)
         self.btn_cerrar.setStyleSheet("""
             QPushButton {
@@ -1175,8 +1237,7 @@ class CierreCajaDialog(QDialog):
             }
         """)
         self.btn_cerrar.clicked.connect(self._confirmar_cierre)
-        btn_row.addWidget(self.btn_cerrar)
-
+        btn_row.addWidget(self.btn_cerrar, 1)
         root.addLayout(btn_row)
 
     def _actualizar_arqueo(self):
@@ -1223,8 +1284,11 @@ class CierreCajaDialog(QDialog):
     def _imprimir_arqueo(self):
         """Genera y abre el ticket de arqueo en PDF."""
         try:
+            obs = self.input_obs.text().strip() or None
             with get_session() as session:
-                pdf_path = generar_ticket_arqueo_pdf(session, self.sesion_caja_id)
+                pdf_path = generar_ticket_arqueo_pdf(
+                    session, self.sesion_caja_id, observacion=obs
+                )
 
             if pdf_path and Path(pdf_path).exists():
                 try:
@@ -1235,6 +1299,18 @@ class CierreCajaDialog(QDialog):
                 QMessageBox.warning(self, "Aviso", "No se pudo generar el archivo de ticket.")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al generar reporte de arqueo:\n{e}")
+
+    def _imprimir_arqueo_directo(self):
+        """Envía el arqueo directamente a la impresora con QPrinter."""
+        try:
+            obs = self.input_obs.text().strip() or None
+            with get_session() as session:
+                layout = construir_layout_arqueo(
+                    session, self.sesion_caja_id, observacion=obs
+                )
+            imprimir_layout(layout, self)
+        except Exception as e:
+            QMessageBox.critical(self, "Error de impresión", f"No se pudo imprimir el arqueo:\n{e}")
 
     def _confirmar_cierre(self):
         """Pide confirmación visual amigable y cierra la sesión de caja."""
@@ -1266,8 +1342,16 @@ class CierreCajaDialog(QDialog):
 
         try:
             with get_session() as session:
-                cerrar_caja(session, self.sesion_caja_id, monto_fisico, obs)
-                pdf_path = generar_ticket_arqueo_pdf(session, self.sesion_caja_id)
+                cerrar_caja(
+                    session,
+                    self.sesion_caja_id,
+                    monto_fisico,
+                    obs,
+                    usuario_id=self.usuario.id,
+                )
+                pdf_path = generar_ticket_arqueo_pdf(
+                    session, self.sesion_caja_id, observacion=obs
+                )
 
             self.cierre_completado = True
 

@@ -4,6 +4,9 @@ Tema oscuro profesional - Slate and Teal.
 """
 from pathlib import Path
 
+from PyQt5.QtGui import QFont
+from PyQt5.QtWidgets import QPushButton, QSizePolicy, QTableWidget, QHBoxLayout
+
 _CHECK_ICON_PATH = str(Path(__file__).resolve().parent.parent / "assets" / "check_white.png").replace("\\", "/")
 
 PALETTE = {
@@ -31,6 +34,136 @@ PALETTE = {
     "text_muted":    "#64748b",
     "white":         "#ffffff",
 }
+
+# Métricas únicas para botones. Los colores elegidos mantienen contraste AA
+# con texto blanco incluso en hover, pulsado y deshabilitado.
+BUTTON_METRICS = {
+    "standard": (34, 13, 16, 96),
+    "primary": (40, 15, 16, 120),
+    "compact": (28, 13, 10, 88),
+}
+BUTTON_COLORS = {
+    "standard": ("#334155", "#1e293b", "#0f172a"),
+    "primary": ("#075985", "#0c4a6e", "#082f49"),
+    "success": ("#166534", "#14532d", "#052e16"),
+    "danger": ("#991b1b", "#7f1d1d", "#450a0a"),
+    "warning": ("#92400e", "#78350f", "#451a03"),
+    "brand": ("#9d174d", "#831843", "#500724"),
+}
+
+
+def configurar_boton(boton: QPushButton, tipo: str = "standard", color: str | None = None):
+    """Aplica altura, ancho mínimo según texto y estados de alto contraste."""
+    alto, fuente, padding, minimo = BUTTON_METRICS[tipo]
+    fondo, hover, pulsado = BUTTON_COLORS[color or ("primary" if tipo == "primary" else "standard")]
+    peso = "bold" if tipo == "primary" else "600"
+    font = QFont(boton.font())
+    font.setPixelSize(fuente)
+    font.setBold(tipo == "primary")
+    boton.setFont(font)
+    boton.setStyleSheet(f"""
+        QPushButton {{ background: {fondo}; color: #ffffff; border: 1px solid #64748b;
+            border-radius: 7px; padding: 0 {padding}px; font-size: {fuente}px;
+            font-weight: {peso}; min-height: {alto - 2}px;
+            max-height: {alto - 2}px; }}
+        QPushButton:hover {{ background: {hover}; color: #ffffff; }}
+        QPushButton:pressed {{ background: {pulsado}; color: #ffffff; }}
+        QPushButton:disabled {{ background: #374151; color: #f1f5f9;
+            border-color: #64748b; }}
+    """)
+    # Un setFixedWidth anterior deja también el máximo bloqueado.
+    boton.setMaximumWidth(16777215)
+    boton.setMinimumWidth(max(minimo if len(boton.text().strip()) > 1 else alto,
+                              boton.fontMetrics().horizontalAdvance(boton.text())
+                              + 2 * padding + (boton.iconSize().width() + 6 if not boton.icon().isNull() else 0)))
+    boton.setFixedHeight(alto)
+    boton.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+
+
+def normalizar_botones(contenedor):
+    """Clasifica botones iniciales y los creados al refrescar tablas.
+
+    Respeta el estilo propio del botón cuando tiene la propiedad
+    ``estilo_boton="ignorar"`` o cuando ya tiene un stylesheet personalizado
+    no vacío establecido directamente sobre él (distintos de los que este
+    normalizador generaría).  Eso permite que botones con colores propios
+    (ojo de contraseña, +/−, cobrar, etc.) no queden aplanados a gris.
+    """
+    for boton in contenedor.findChildren(QPushButton):
+        prop = boton.property("estilo_boton")
+        if prop == "ignorar":
+            continue
+        # Botones con stylesheet propio no vacío y sin prop que indique
+        # que el normalizador debe procesarlos también se saltan.
+        if boton.styleSheet().strip() and prop not in ("compact", "primary", "standard"):
+            continue
+        texto = boton.text().casefold()
+        ancestro = boton.parentWidget()
+        en_tabla = isinstance(contenedor, QTableWidget)
+        while ancestro is not None and ancestro is not contenedor:
+            if isinstance(ancestro, QTableWidget):
+                en_tabla = True
+                break
+            ancestro = ancestro.parentWidget()
+        tipo = "compact" if en_tabla or prop == "compact" else (
+            "primary" if prop == "primary" or
+            boton.objectName() in ("btn_primary", "btn_success") or
+            any(palabra in texto for palabra in ("guardar", "registrar", "cobrar", "confirmar", "aceptar"))
+            else "standard"
+        )
+        color = "danger" if any(p in texto for p in ("quitar", "eliminar", "anular", "cerrar caja")) else (
+            "success" if tipo == "primary" else None
+        )
+        configurar_boton(boton, tipo, color)
+    def visitar(layout):
+        if layout is None:
+            return
+        if isinstance(layout, QHBoxLayout):
+            widgets = [layout.itemAt(i).widget() for i in range(layout.count())]
+            # Solo iguala filas donde todos los botones no tienen estilos propios
+            elegibles = [
+                w for w in widgets
+                if isinstance(w, QPushButton)
+                and w.property("estilo_boton") != "ignorar"
+                and (not w.styleSheet().strip() or
+                     w.property("estilo_boton") in ("compact", "primary", "standard"))
+            ]
+            if len(elegibles) >= 2 and len(elegibles) == len([w for w in widgets if w is not None]):
+                principal = any(
+                    any(p in w.text().casefold() for p in
+                        ("guardar", "registrar", "cobrar", "confirmar", "aceptar"))
+                    for w in elegibles
+                )
+                colores = tuple(
+                    "danger" if any(p in w.text().casefold() for p in
+                        ("quitar", "eliminar", "anular", "cerrar caja", "confirmar cierre"))
+                    else "success" if principal and any(p in w.text().casefold() for p in
+                        ("guardar", "registrar", "cobrar", "confirmar", "aceptar"))
+                    else "standard" for w in elegibles
+                )
+                igualar_fila(layout, *elegibles, tipo="primary" if principal else "standard",
+                             colores=colores)
+        for i in range(layout.count()):
+            visitar(layout.itemAt(i).layout())
+    visitar(contenedor.layout())
+
+
+def igualar_fila(layout, *botones: QPushButton, tipo: str = "primary", colores=None,
+                 max_ancho: int | None = None):
+    """Da a los botones de una fila igual altura y ancho mínimo.
+
+    Los botones comparten el mismo ancho mínimo (el mayor del grupo) pero NO
+    se expanden a lo ancho de la fila (stretch=0).  Pasa ``max_ancho`` para
+    fijar un tope visual (p. ej. 180 px en barras de acciones laterales).
+    """
+    colores = colores or (None,) * len(botones)
+    for boton, color in zip(botones, colores):
+        configurar_boton(boton, tipo, color)
+    ancho = max(boton.minimumWidth() for boton in botones)
+    for boton in botones:
+        boton.setMinimumWidth(ancho)
+        if max_ancho is not None:
+            boton.setMaximumWidth(max_ancho)
 
 STYLESHEET = f"""
 QMainWindow, QDialog, QWidget {{
@@ -138,114 +271,130 @@ QComboBox QAbstractItemView::item:selected {{
     font-weight: bold;
 }}
 QPushButton {{
-    background-color: {PALETTE['bg_hover']};
-    color: {PALETTE['text_primary']};
-    border: 1px solid {PALETTE['border']};
+    background-color: {BUTTON_COLORS['standard'][0]};
+    color: #ffffff;
+    border: 1px solid #64748b;
     border-radius: 7px;
-    padding: 7px 18px;
+    padding: 0 {BUTTON_METRICS['standard'][2]}px;
     font-weight: 600;
-    font-size: 13px;
-    min-height: 32px;
+    font-size: {BUTTON_METRICS['standard'][1]}px;
+    min-height: {BUTTON_METRICS['standard'][0]}px;
 }}
 QPushButton:hover {{
-    background-color: {PALETTE['accent']};
-    color: {PALETTE['white']};
-    border-color: {PALETTE['accent']};
+    background-color: {BUTTON_COLORS['standard'][1]};
+    color: #ffffff;
+    border-color: #64748b;
 }}
 QPushButton:pressed {{
-    background-color: {PALETTE['accent_dark']};
-    color: {PALETTE['white']};
+    background-color: {BUTTON_COLORS['standard'][2]};
+    color: #ffffff;
 }}
 QPushButton:disabled {{
-    background-color: {PALETTE['bg_surface']};
-    color: {PALETTE['text_muted']};
-    border-color: {PALETTE['border']};
+    background-color: #374151;
+    color: #f1f5f9;
+    border-color: #64748b;
 }}
 QPushButton#btn_primary {{
-    background-color: {PALETTE['accent']};
-    color: {PALETTE['white']};
+    background-color: {BUTTON_COLORS['primary'][0]};
+    color: #ffffff;
     border: none;
-    font-size: 13px;
+    font-size: {BUTTON_METRICS['primary'][1]}px;
     font-weight: bold;
-    min-height: 36px;
+    min-height: {BUTTON_METRICS['primary'][0]}px;
     border-radius: 8px;
-    padding: 7px 20px;
+    padding: 0 {BUTTON_METRICS['primary'][2]}px;
 }}
 QPushButton#btn_primary:hover {{
-    background-color: {PALETTE['accent_hover']};
-    color: {PALETTE['white']};
+    background-color: {BUTTON_COLORS['primary'][1]};
+    color: #ffffff;
 }}
 QPushButton#btn_primary:pressed {{
-    background-color: {PALETTE['accent_dark']};
-    color: {PALETTE['white']};
+    background-color: {BUTTON_COLORS['primary'][2]};
+    color: #ffffff;
 }}
 QPushButton#btn_success {{
-    background-color: {PALETTE['success']};
-    color: {PALETTE['white']};
+    background-color: {BUTTON_COLORS['success'][0]};
+    color: #ffffff;
     border: none;
-    font-size: 13px;
-    min-height: 36px;
+    font-size: {BUTTON_METRICS['primary'][1]}px;
+    min-height: {BUTTON_METRICS['primary'][0]}px;
     border-radius: 8px;
     font-weight: bold;
-    padding: 7px 20px;
+    padding: 0 {BUTTON_METRICS['primary'][2]}px;
 }}
 QPushButton#btn_success:hover {{
-    background-color: #059669;
-    color: {PALETTE['white']};
+    background-color: {BUTTON_COLORS['success'][1]};
+    color: #ffffff;
 }}
 QPushButton#btn_success:pressed {{
-    background-color: #047857;
-    color: {PALETTE['white']};
+    background-color: {BUTTON_COLORS['success'][2]};
+    color: #ffffff;
 }}
 QPushButton#btn_danger {{
-    background-color: {PALETTE['danger']};
-    color: {PALETTE['white']};
+    background-color: {BUTTON_COLORS['danger'][0]};
+    color: #ffffff;
     border: none;
     border-radius: 7px;
-    padding: 7px 18px;
+    padding: 0 {BUTTON_METRICS['standard'][2]}px;
     font-weight: bold;
-    min-height: 32px;
+    font-size: {BUTTON_METRICS['standard'][1]}px;
+    min-height: {BUTTON_METRICS['standard'][0]}px;
 }}
 QPushButton#btn_danger:hover {{
-    background-color: #e11d48;
-    color: {PALETTE['white']};
+    background-color: {BUTTON_COLORS['danger'][1]};
+    color: #ffffff;
 }}
 QPushButton#btn_danger:pressed {{
-    background-color: #be123c;
-    color: {PALETTE['white']};
+    background-color: {BUTTON_COLORS['danger'][2]};
+    color: #ffffff;
 }}
 QPushButton#btn_warning {{
-    background-color: {PALETTE['warning']};
-    color: #1c1917;
+    background-color: {BUTTON_COLORS['warning'][0]};
+    color: #ffffff;
     border: none;
     border-radius: 7px;
-    padding: 7px 18px;
+    padding: 0 {BUTTON_METRICS['standard'][2]}px;
     font-weight: bold;
-    min-height: 32px;
+    font-size: {BUTTON_METRICS['standard'][1]}px;
+    min-height: {BUTTON_METRICS['standard'][0]}px;
 }}
 QPushButton#btn_warning:hover {{
-    background-color: #d97706;
-    color: #1c1917;
+    background-color: {BUTTON_COLORS['warning'][1]};
+    color: #ffffff;
 }}
 QPushButton#btn_warning:pressed {{
-    background-color: #b45309;
-    color: {PALETTE['white']};
+    background-color: {BUTTON_COLORS['warning'][2]};
+    color: #ffffff;
+}}
+QPushButton#btn_primary:disabled, QPushButton#btn_success:disabled,
+QPushButton#btn_danger:disabled, QPushButton#btn_warning:disabled {{
+    background-color: #374151;
+    color: #f1f5f9;
+    border: 1px solid #64748b;
 }}
 QPushButton#btn_fkey {{
-    background-color: {PALETTE['bg_card']};
-    color: {PALETTE['accent']};
-    border: 1px solid {PALETTE['border']};
+    background-color: {BUTTON_COLORS['standard'][0]};
+    color: #ffffff;
+    border: 1px solid #64748b;
     border-radius: 6px;
-    padding: 4px 10px;
-    font-size: 11px;
+    padding: 0 {BUTTON_METRICS['compact'][2]}px;
+    font-size: {BUTTON_METRICS['compact'][1]}px;
     font-weight: bold;
-    min-height: 28px;
-    min-width: 70px;
+    min-height: {BUTTON_METRICS['compact'][0]}px;
+    min-width: {BUTTON_METRICS['compact'][3]}px;
 }}
 QPushButton#btn_fkey:hover {{
-    background-color: {PALETTE['accent']};
-    color: {PALETTE['white']};
-    border-color: {PALETTE['accent']};
+    background-color: {BUTTON_COLORS['standard'][1]};
+    color: #ffffff;
+    border-color: #64748b;
+}}
+QPushButton#btn_fkey:pressed {{
+    background-color: {BUTTON_COLORS['standard'][2]};
+    color: #ffffff;
+}}
+QPushButton#btn_fkey:disabled {{
+    background-color: #374151;
+    color: #f1f5f9;
 }}
 QTableWidget {{
     background-color: {PALETTE['bg_surface']};

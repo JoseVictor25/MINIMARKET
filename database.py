@@ -71,12 +71,26 @@ def init_db():
                 conn.execute(text("ALTER TABLE ventas ADD COLUMN referencia_pago VARCHAR(100)"))
             if "comprobante_pago" not in columnas:
                 conn.execute(text("ALTER TABLE ventas ADD COLUMN comprobante_pago VARCHAR(500)"))
+            if "metodo_pago_original" not in columnas:
+                conn.execute(text("ALTER TABLE ventas ADD COLUMN metodo_pago_original VARCHAR(30)"))
+            if "motivo_edicion" not in columnas:
+                conn.execute(text("ALTER TABLE ventas ADD COLUMN motivo_edicion VARCHAR(300)"))
+            if "fecha_edicion" not in columnas:
+                conn.execute(text("ALTER TABLE ventas ADD COLUMN fecha_edicion DATETIME"))
+            if "editado_por_id" not in columnas:
+                conn.execute(text("ALTER TABLE ventas ADD COLUMN editado_por_id INTEGER REFERENCES usuarios(id)"))
 
             # Columnas nuevas en usuarios
             res_u = conn.execute(text("PRAGMA table_info(usuarios)")).fetchall()
             columnas_u = [row[1] for row in res_u]
             if "qr_imagen" not in columnas_u:
                 conn.execute(text("ALTER TABLE usuarios ADD COLUMN qr_imagen VARCHAR(500)"))
+
+            # Columnas nuevas en sesiones de caja
+            res_c = conn.execute(text("PRAGMA table_info(sesiones_caja)")).fetchall()
+            columnas_c = [row[1] for row in res_c]
+            if "observacion_cierre" not in columnas_c:
+                conn.execute(text("ALTER TABLE sesiones_caja ADD COLUMN observacion_cierre VARCHAR(300)"))
 
             conn.commit()
     except Exception:

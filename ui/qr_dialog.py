@@ -22,7 +22,7 @@ from services.archivo_service import (
     eliminar_qr_usuario,
     resolver_ruta,
 )
-from ui.styles import PALETTE
+from ui.styles import PALETTE, normalizar_botones
 
 
 class GestionQRDialog(QDialog):
@@ -47,6 +47,7 @@ class GestionQRDialog(QDialog):
         self._cargar_datos_usuario()
         self._build_ui()
         self._refrescar_vista_qr()
+        normalizar_botones(self)
 
     def _cargar_datos_usuario(self):
         with SessionLocal() as session:
@@ -210,7 +211,7 @@ class GestionQRDialog(QDialog):
             }}
         """)
         self.btn_guardar.clicked.connect(self._guardar)
-        footer.addWidget(self.btn_guardar, 2)
+        footer.addWidget(self.btn_guardar, 1)
 
         root.addLayout(footer)
 
@@ -357,6 +358,7 @@ class VisualizadorImagenDialog(QDialog):
         self.setWindowFlags(self.windowFlags() | Qt.WindowMaximizeButtonHint)
         self._pixmap_original: QPixmap | None = None
         self._build_ui()
+        normalizar_botones(self)
 
     def _build_ui(self):
         lay = QVBoxLayout(self)
@@ -412,9 +414,7 @@ class VisualizadorImagenDialog(QDialog):
             }}
         """)
         btn_abrir_ext.clicked.connect(self._abrir_externo)
-        btns.addWidget(btn_abrir_ext)
-
-        btns.addStretch()
+        btns.addWidget(btn_abrir_ext, 1)
 
         btn_cerrar = QPushButton("Cerrar (Esc)")
         btn_cerrar.setFixedHeight(40)
@@ -433,7 +433,7 @@ class VisualizadorImagenDialog(QDialog):
             }}
         """)
         btn_cerrar.clicked.connect(self.accept)
-        btns.addWidget(btn_cerrar)
+        btns.addWidget(btn_cerrar, 1)
 
         lay.addLayout(btns)
 

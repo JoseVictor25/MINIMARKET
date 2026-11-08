@@ -5,17 +5,19 @@ from __future__ import annotations
 
 import os
 import calendar
+import unicodedata
 from datetime import datetime, date
 from decimal import Decimal
 
-from PyQt5.QtCore import Qt, QDate
+from PyQt5.QtCore import Qt, QDate, QEvent, QStringListModel, pyqtSignal
 from PyQt5.QtGui import QFont, QColor
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
     QLineEdit, QPushButton, QTableWidget, QTableWidgetItem,
     QHeaderView, QDialog, QFormLayout, QComboBox,
     QDoubleSpinBox, QMessageBox, QAbstractItemView,
     QFrame, QTextEdit, QSplitter, QDateEdit, QFileDialog,
+    QCompleter, QSizePolicy,
 )
 
 from database import SessionLocal
@@ -26,7 +28,7 @@ from models.usuario import Usuario
 from services.compra_service import registrar_compra
 from services.export_service import exportar_compras_excel, exportar_compras_pdf
 from config import CURRENCY, APP_NAME
-from ui.styles import PALETTE, configurar_calendario_elegante
+from ui.styles import PALETTE, configurar_calendario_elegante, normalizar_botones, igualar_fila
 
 
 class NuevaCompraDialog(QDialog):
@@ -97,10 +99,45 @@ class NuevaCompraDialog(QDialog):
 
         self.combo_prod = QComboBox()
         self.combo_prod.setFixedHeight(34)
-        self.combo_prod.setMinimumWidth(260)
-        productos = self.session.query(Producto).filter_by(activo=True).order_by(Producto.descripcion).all()
-        for p in productos:
+        self.combo_prod.setMinimumWidth(320)
+        self.combo_prod.setEditable(True)
+        self.combo_prod.setInsertPolicy(QComboBox.NoInsert)
+        self.combo_prod.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._productos_cache: list[Producto] = (
+            self.session.query(Producto)
+            .filter_by(activo=True)
+            .order_by(Producto.descripcion)
+            .all()
+        )
+        for p in self._productos_cache:
             self.combo_prod.addItem(f"{p.codigo_barras} – {p.descripcion}", p.id)
+
+        # Índice normalizado una sola vez: cada pulsación revisa 1000+ nombres
+        # en memoria y entrega al desplegable un máximo de 20 coincidencias.
+        self._etiquetas_producto = {
+            f"{p.codigo_barras} – {p.descripcion}": p.id for p in self._productos_cache
+        }
+        self._indice_productos = [
+            (self._normalizar(f"{p.codigo_barras} {p.descripcion}"),
+             f"{p.codigo_barras} – {p.descripcion}")
+            for p in self._productos_cache
+        ]
+        self._modelo_busqueda = QStringListModel(self)
+        completador = QCompleter(self._modelo_busqueda, self.combo_prod)
+        completador.setCaseSensitivity(Qt.CaseInsensitive)
+        completador.setFilterMode(Qt.MatchContains)
+        completador.setCompletionMode(QCompleter.PopupCompletion)
+        completador.setMaxVisibleItems(20)
+        self.combo_prod.setCompleter(completador)
+        self._completador_producto = completador
+        completador.activated[str].connect(self._seleccionar_producto)
+        if self.combo_prod.lineEdit():
+            self.combo_prod.lineEdit().setPlaceholderText(
+                "Escriba nombre o código de barras del producto..."
+            )
+            self.combo_prod.lineEdit().textEdited.connect(self._filtrar_productos)
+            self.combo_prod.lineEdit().installEventFilter(self)
+
         self.combo_prod.currentIndexChanged.connect(self._on_producto_cambiado)
         agregar_lay.addWidget(self.combo_prod, 1)
 
@@ -200,13 +237,13 @@ class NuevaCompraDialog(QDialog):
         self.tabla.setColumnWidth(2, 95)
         self.tabla.setColumnWidth(3, 115)
         self.tabla.setColumnWidth(4, 120)
-        self.tabla.setColumnWidth(5, 85)
+        self.tabla.setColumnWidth(5, 105)
         header.setFixedHeight(38)
 
         self.tabla.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tabla.setAlternatingRowColors(True)
         self.tabla.verticalHeader().setVisible(False)
-        self.tabla.verticalHeader().setDefaultSectionSize(36)
+        self.tabla.verticalHeader().setDefaultSectionSize(42)
         root.addWidget(self.tabla, 1)
 
         # ── Total y botones ──────────────────────────────────────────────────
@@ -223,7 +260,7 @@ class NuevaCompraDialog(QDialog):
         btn_cancel.setFixedWidth(100)
         btn_cancel.setCursor(Qt.PointingHandCursor)
         btn_cancel.clicked.connect(self.reject)
-        bottom.addWidget(btn_cancel)
+        bottom.addWidget(btn_cancel, 1)
 
         btn_guardar = QPushButton("✓ Registrar Compra")
         btn_guardar.setObjectName("btn_success")
@@ -245,27 +282,124 @@ class NuevaCompraDialog(QDialog):
             }
         """)
         btn_guardar.clicked.connect(self._guardar)
-        bottom.addWidget(btn_guardar)
-
+        bottom.addWidget(btn_guardar, 1)
         root.addLayout(bottom)
+        normalizar_botones(self)
+        igualar_fila(bottom, btn_cancel, btn_guardar, colores=("standard", "success"))
+
+    @staticmethod
+    def _normalizar(texto: str) -> str:
+        return "".join(
+            c for c in unicodedata.normalize("NFD", texto.casefold())
+            if unicodedata.category(c) != "Mn"
+        )
+
+    def _filtrar_productos(self, texto: str):
+        buscar = self._normalizar(texto.strip())
+        etiquetas = []
+        if buscar:
+            for indice, etiqueta in self._indice_productos:
+                if buscar in indice:
+                    etiquetas.append(etiqueta)
+                    if len(etiquetas) == 20:
+                        break
+        self._modelo_busqueda.setStringList(etiquetas)
+        if etiquetas:
+            self._completador_producto.setCompletionPrefix("")
+            self._completador_producto.complete()
+        else:
+            self._completador_producto.popup().hide()
+
+    def _seleccionar_producto(self, etiqueta: str):
+        prod_id = self._etiquetas_producto.get(etiqueta)
+        if prod_id is None:
+            return
+        indice = self.combo_prod.findData(prod_id)
+        if indice >= 0:
+            self.combo_prod.setCurrentIndex(indice)
+            self._on_producto_cambiado()
+            self.input_cant.setText("1")
+            self.input_cant.setFocus()
+            self.input_cant.selectAll()
+
+    def eventFilter(self, obj, event):
+        if obj is self.combo_prod.lineEdit() and event.type() == QEvent.KeyPress:
+            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                popup = self._completador_producto.popup()
+                if popup.isVisible():
+                    indice = popup.currentIndex()
+                    if not indice.isValid() and self._modelo_busqueda.rowCount():
+                        indice = self._modelo_busqueda.index(0, 0)
+                    if indice.isValid():
+                        self._seleccionar_producto(indice.data())
+                    popup.hide()
+                    return True
+                producto = self._resolver_producto()
+                if producto:
+                    self._seleccionar_producto(
+                        f"{producto.codigo_barras} – {producto.descripcion}"
+                    )
+                return True
+        return super().eventFilter(obj, event)
+
+    def _resolver_producto(self) -> Producto | None:
+        """
+        Devuelve el producto escrito/seleccionado. Acepta el texto completo
+        del combo, el código de barras o una parte del nombre.
+        """
+        texto = self.combo_prod.currentText().strip()
+        if not texto:
+            return None
+
+        # 1) Coincidencia exacta con el ítem seleccionado del combo.
+        idx = self.combo_prod.currentIndex()
+        if idx >= 0 and texto == self.combo_prod.itemText(idx):
+            prod_id = self.combo_prod.itemData(idx)
+            if prod_id:
+                prod = self.session.get(Producto, prod_id)
+                if prod:
+                    return prod
+
+        # 2) Coincidencia exacta con el texto visible, código o descripción.
+        texto_lower = self._normalizar(texto)
+        for p in self._productos_cache:
+            etiqueta = f"{p.codigo_barras} – {p.descripcion}"
+            if (
+                texto == etiqueta
+                or texto_lower == self._normalizar(p.codigo_barras)
+                or texto_lower == self._normalizar(p.descripcion)
+            ):
+                return p
+
+        # 3) Búsqueda parcial por nombre o código de barras.
+        coincidencias = [
+            p for p in self._productos_cache
+            if texto_lower in self._normalizar(p.codigo_barras)
+            or texto_lower in self._normalizar(p.descripcion)
+        ]
+        if len(coincidencias) == 1:
+            return coincidencias[0]
+        # Una consulta ambigua debe resolverse eligiendo del desplegable.
+        return None
 
     def _on_producto_cambiado(self):
         """Rellena el precio con el costo actual del producto para mayor agilidad."""
-        prod_id = self.combo_prod.currentData()
-        if prod_id:
-            prod = self.session.get(Producto, prod_id)
-            if prod and prod.precio_compra_bs is not None:
-                self.input_precio.setText(f"{prod.precio_compra_bs:.2f}")
+        indice = self.combo_prod.currentIndex()
+        if indice < 0 or self.combo_prod.currentText() != self.combo_prod.itemText(indice):
+            return
+        prod = self._resolver_producto()
+        if prod and prod.precio_compra_bs is not None:
+            self.input_precio.setText(f"{prod.precio_compra_bs:.2f}")
 
     def _agregar_item(self):
-        prod_id = self.combo_prod.currentData()
-        if not prod_id:
-            QMessageBox.warning(self, "Producto Requerido", "Seleccione un producto.")
-            return
-
-        prod = self.session.get(Producto, prod_id)
+        prod = self._resolver_producto()
         if not prod:
-            QMessageBox.warning(self, "Error", "Producto no encontrado.")
+            QMessageBox.warning(
+                self,
+                "Producto Requerido",
+                "Escriba o seleccione un producto válido por nombre o código de barras.",
+            )
+            self.combo_prod.setFocus()
             return
 
         cant_txt = self.input_cant.text().strip().replace(",", ".")
@@ -347,20 +481,20 @@ class NuevaCompraDialog(QDialog):
             self.tabla.setItem(i, 4, it_sub)
 
             # Botón de eliminar
-            btn_quitar = QPushButton("✕")
+            btn_quitar = QPushButton("✕ Quitar")
             btn_quitar.setToolTip("Quitar producto de la lista")
             btn_quitar.setCursor(Qt.PointingHandCursor)
-            btn_quitar.setFixedHeight(24)
-            btn_quitar.setFixedWidth(32)
+            btn_quitar.setMinimumWidth(82)
+            btn_quitar.setFixedHeight(32)
             btn_quitar.setStyleSheet("""
                 QPushButton {
                     background-color: rgba(239, 68, 68, 0.2);
                     color: #f87171;
                     border: 1px solid #ef4444;
-                    border-radius: 4px;
-                    font-size: 12px;
+                    border-radius: 6px;
+                    font-size: 14px;
                     font-weight: bold;
-                    padding: 0px;
+                    padding: 0 8px;
                     margin: 0px;
                 }
                 QPushButton:hover {
@@ -378,6 +512,7 @@ class NuevaCompraDialog(QDialog):
             self.tabla.setCellWidget(i, 5, c_widget)
 
         self.lbl_total.setText(f"Total: {CURRENCY} {total:.2f}")
+        normalizar_botones(self.tabla)
 
     def _guardar(self):
         if not self._items:
@@ -479,6 +614,7 @@ class DetalleCompraDialog(QDialog):
         self.setWindowTitle(f"Detalle de Compra – Factura #{compra.numero_factura}")
         self.setMinimumSize(720, 520)
         self._build_ui()
+        normalizar_botones(self)
 
     def _build_ui(self):
         lay = QVBoxLayout(self)
@@ -572,6 +708,8 @@ class DetalleCompraDialog(QDialog):
 class ComprasWidget(QWidget):
     """Panel de historial y gestión de compras a proveedores con filtros avanzados y exportación."""
 
+    datos_actualizados = pyqtSignal(str)
+
     def __init__(self, usuario: Usuario, parent=None):
         super().__init__(parent)
         self.usuario = usuario
@@ -579,6 +717,33 @@ class ComprasWidget(QWidget):
         self._compras_filtradas: list[Compra] = []
         self._build_ui()
         self._cargar_compras()
+        normalizar_botones(self)
+
+    def actualizar(self):
+        """Refresca el historial de compras conservando los filtros actuales."""
+        try:
+            self.session.expire_all()
+        except Exception:
+            pass
+        self._cargar_proveedores_filtro()
+        self._cargar_compras()
+
+    def _cargar_proveedores_filtro(self):
+        """Recarga el combo de proveedores conservando la selección actual."""
+        if not hasattr(self, "combo_prov_filtro"):
+            return
+        actual = self.combo_prov_filtro.currentData()
+        self.combo_prov_filtro.blockSignals(True)
+        self.combo_prov_filtro.clear()
+        self.combo_prov_filtro.addItem("Todos los proveedores", None)
+        try:
+            for p in self.session.query(Proveedor).order_by(Proveedor.razon_social).all():
+                self.combo_prov_filtro.addItem(p.razon_social, p.id)
+        except Exception:
+            pass
+        idx = self.combo_prov_filtro.findData(actual) if actual else 0
+        self.combo_prov_filtro.setCurrentIndex(max(idx, 0))
+        self.combo_prov_filtro.blockSignals(False)
 
     def _build_ui(self):
         lay = QVBoxLayout(self)
@@ -590,8 +755,7 @@ class ComprasWidget(QWidget):
         lbl_tit = QLabel("COMPRAS Y ABASTECIMIENTO")
         lbl_tit.setFont(QFont("Segoe UI", 15, QFont.Bold))
         lbl_tit.setStyleSheet("color: #ffffff; letter-spacing: 0.5px;")
-        top_bar.addWidget(lbl_tit)
-        top_bar.addStretch()
+        lay.addWidget(lbl_tit)
 
         # Botón Exportar Excel
         self.btn_export_excel = QPushButton("📊 Exportar Excel")
@@ -659,29 +823,31 @@ class ComprasWidget(QWidget):
         lay.addLayout(top_bar)
 
         # ── 2. Tarjetas Resumen (KPIs) ───────────────────────────────────────
-        kpis_lay = QHBoxLayout()
+        kpis_lay = QGridLayout()
         kpis_lay.setSpacing(14)
 
         card1, self.lbl_kpi_total, self.lbl_kpi_total_sub = _crear_kpi_card("Total Invertido en Compras", f"{CURRENCY} 0.00", "#10b981", "En el período seleccionado")
         card2, self.lbl_kpi_cant, self.lbl_kpi_cant_sub = _crear_kpi_card("Facturas / Compras", "0", "#38bdf8", "Transacciones registradas")
         card3, self.lbl_kpi_provs, self.lbl_kpi_provs_sub = _crear_kpi_card("Proveedores Atendidos", "0", "#a855f7", "Diferentes proveedores")
 
-        kpis_lay.addWidget(card1)
-        kpis_lay.addWidget(card2)
-        kpis_lay.addWidget(card3)
+        kpis_lay.addWidget(card1, 0, 0)
+        kpis_lay.addWidget(card2, 0, 1)
+        kpis_lay.addWidget(card3, 1, 0, 1, 2)
         lay.addLayout(kpis_lay)
 
         # ── 3. Barra de Filtros (Día, Mes, Año, Búsqueda) ────────────────────
         filter_frame = QFrame()
         filter_frame.setObjectName("card")
         filter_frame.setStyleSheet("background-color: #1e293b; border: 1px solid #334155; border-radius: 8px;")
-        filter_lay = QHBoxLayout(filter_frame)
+        filter_lay = QVBoxLayout(filter_frame)
         filter_lay.setContentsMargins(14, 10, 14, 10)
         filter_lay.setSpacing(10)
+        periodo_lay = QHBoxLayout()
+        busqueda_lay = QHBoxLayout()
 
         lbl_filtro = QLabel("Filtrar por:")
         lbl_filtro.setStyleSheet("font-weight: bold; color: #e2e8f0; font-size: 13px;")
-        filter_lay.addWidget(lbl_filtro)
+        periodo_lay.addWidget(lbl_filtro)
 
         self.combo_periodo = QComboBox()
         self.combo_periodo.setFixedHeight(34)
@@ -693,7 +859,7 @@ class ComprasWidget(QWidget):
             "Por Año",
         ])
         self.combo_periodo.currentIndexChanged.connect(self._on_periodo_cambiado)
-        filter_lay.addWidget(self.combo_periodo)
+        periodo_lay.addWidget(self.combo_periodo)
 
         # Date Picker para Día o Hoy
         self.date_picker = QDateEdit()
@@ -704,7 +870,7 @@ class ComprasWidget(QWidget):
         self.date_picker.setDisplayFormat("dd/MM/yyyy")
         configurar_calendario_elegante(self.date_picker)
         self.date_picker.dateChanged.connect(lambda: self._cargar_compras())
-        filter_lay.addWidget(self.date_picker)
+        periodo_lay.addWidget(self.date_picker)
 
         # Selector de Mes
         self.combo_mes = QComboBox()
@@ -714,7 +880,7 @@ class ComprasWidget(QWidget):
         self.combo_mes.addItems(meses)
         self.combo_mes.setCurrentIndex(datetime.now().month - 1)
         self.combo_mes.currentIndexChanged.connect(lambda: self._cargar_compras())
-        filter_lay.addWidget(self.combo_mes)
+        periodo_lay.addWidget(self.combo_mes)
 
         # Selector de Año
         self.combo_anio = QComboBox()
@@ -724,9 +890,20 @@ class ComprasWidget(QWidget):
             self.combo_anio.addItem(str(y))
         self.combo_anio.setCurrentText(str(current_year))
         self.combo_anio.currentIndexChanged.connect(lambda: self._cargar_compras())
-        filter_lay.addWidget(self.combo_anio)
+        periodo_lay.addWidget(self.combo_anio)
 
-        filter_lay.addStretch()
+        # Filtro por proveedor
+        self.combo_prov_filtro = QComboBox()
+        self.combo_prov_filtro.setFixedHeight(34)
+        self.combo_prov_filtro.setMinimumWidth(170)
+        self.combo_prov_filtro.addItem("Todos los proveedores", None)
+        try:
+            for p in self.session.query(Proveedor).order_by(Proveedor.razon_social).all():
+                self.combo_prov_filtro.addItem(p.razon_social, p.id)
+        except Exception:
+            pass
+        self.combo_prov_filtro.currentIndexChanged.connect(lambda: self._cargar_compras())
+        busqueda_lay.addWidget(self.combo_prov_filtro, 1)
 
         # Búsqueda rápida por texto
         self.input_buscar = QLineEdit()
@@ -734,24 +911,28 @@ class ComprasWidget(QWidget):
         self.input_buscar.setFixedWidth(270)
         self.input_buscar.setPlaceholderText("🔍 Buscar factura, proveedor, usuario...")
         self.input_buscar.textChanged.connect(lambda: self._cargar_compras())
-        filter_lay.addWidget(self.input_buscar)
+        busqueda_lay.addWidget(self.input_buscar, 2)
+        filter_lay.addLayout(periodo_lay)
+        filter_lay.addLayout(busqueda_lay)
 
         lay.addWidget(filter_frame)
 
         # ── 4. Tabla de Compras ──────────────────────────────────────────────
-        self.tabla = QTableWidget(0, 7)
+        self.tabla = QTableWidget(0, 8)
         self.tabla.setHorizontalHeaderLabels([
-            "ID", "N° Factura", "Proveedor", "Fecha y Hora", f"Total {CURRENCY}", "Registrado por", "Observación"
+            "ID", "N° Factura", "Proveedor", "Fecha y Hora", f"Total {CURRENCY}", "Registrado por", "Observación", "Acción"
         ])
         header = self.tabla.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Interactive)
         header.setSectionResizeMode(2, QHeaderView.Stretch)
-        self.tabla.setColumnWidth(0, 65)
-        self.tabla.setColumnWidth(1, 130)
-        self.tabla.setColumnWidth(3, 145)
-        self.tabla.setColumnWidth(4, 115)
-        self.tabla.setColumnWidth(5, 125)
-        self.tabla.setColumnWidth(6, 160)
+        self.tabla.setColumnWidth(0, 55)
+        self.tabla.setColumnWidth(1, 120)
+        self.tabla.setColumnWidth(3, 140)
+        self.tabla.setColumnWidth(4, 110)
+        self.tabla.setColumnWidth(5, 120)
+        self.tabla.setColumnWidth(6, 150)
+        self.tabla.setColumnWidth(7, 105)
+        self.tabla.verticalHeader().setDefaultSectionSize(42)
 
         self.tabla.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tabla.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -861,6 +1042,12 @@ class ComprasWidget(QWidget):
         if inicio and fin:
             query = query.filter(Compra.fecha >= inicio, Compra.fecha <= fin)
 
+        prov_id = None
+        if hasattr(self, "combo_prov_filtro"):
+            prov_id = self.combo_prov_filtro.currentData()
+        if prov_id:
+            query = query.filter(Compra.proveedor_id == prov_id)
+
         compras = query.order_by(Compra.fecha.desc()).all()
 
         # Filtrar por texto si hay búsqueda
@@ -918,9 +1105,35 @@ class ComprasWidget(QWidget):
             self.tabla.setItem(i, 5, it_usr)
 
             self.tabla.setItem(i, 6, QTableWidgetItem(c.observacion or "-"))
+
+            btn_ver = QPushButton("👁 Ver")
+            btn_ver.setCursor(Qt.PointingHandCursor)
+            btn_ver.setFixedHeight(32)
+            btn_ver.setMinimumWidth(88)
+            btn_ver.setStyleSheet("""
+                QPushButton {
+                    background-color: #1e293b;
+                    color: #38bdf8;
+                    border: 1px solid #0284c7;
+                    border-radius: 6px;
+                    font-size: 12px;
+                    font-weight: 600;
+                    padding: 0 12px;
+                }
+                QPushButton:hover {
+                    background-color: #0284c7;
+                    color: #ffffff;
+                }
+            """)
+            btn_ver.clicked.connect(
+                lambda _, compra_id=c.id: self._ver_detalle_id(compra_id)
+            )
+            self.tabla.setCellWidget(i, 7, btn_ver)
+
             self.tabla.item(i, 0).setData(Qt.UserRole, c.id)
 
         self.lbl_conteo.setText(f"Mostrando {len(compras)} compra(s) | {periodo_str}")
+        normalizar_botones(self.tabla)
 
     def _get_compra_seleccionada(self) -> Compra | None:
         row = self.tabla.currentRow()
@@ -937,11 +1150,20 @@ class ComprasWidget(QWidget):
         dlg = DetalleCompraDialog(c, parent=self)
         dlg.exec()
 
+    def _ver_detalle_id(self, compra_id: int):
+        """Abre el detalle de una compra desde el botón de la columna Acción."""
+        c = self.session.get(Compra, compra_id)
+        if not c:
+            QMessageBox.warning(self, "Compra no encontrada", "La compra seleccionada ya no existe.")
+            return
+        dlg = DetalleCompraDialog(c, parent=self)
+        dlg.exec()
+
     def _nueva_compra(self):
         dlg = NuevaCompraDialog(usuario=self.usuario, parent=self)
         if dlg.exec():
-            self.session.expire_all()
-            self._cargar_compras()
+            self.actualizar()
+            self.datos_actualizados.emit("compra")
 
     def _exportar_excel(self):
         if not self._compras_filtradas:
