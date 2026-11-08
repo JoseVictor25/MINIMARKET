@@ -27,7 +27,7 @@ from services.ticket_service import generar_ticket_pdf, construir_layout_ticket
 from services.print_service import imprimir_layout
 from services.export_service import exportar_ventas_excel, exportar_ventas_pdf
 from config import CURRENCY, APP_NAME
-from ui.styles import PALETTE, configurar_calendario_elegante
+from ui.styles import PALETTE, configurar_calendario_elegante, normalizar_botones, igualar_fila
 from ui.qr_dialog import VisualizadorImagenDialog
 
 
@@ -71,6 +71,7 @@ class DetalleVentaDialog(QDialog):
         self.setWindowTitle(f"Venta #{venta.numero_transaccion}")
         self.setMinimumSize(560, 460)
         self._build_ui()
+        normalizar_botones(self)
 
     def _build_ui(self):
         lay = QVBoxLayout(self)
@@ -263,6 +264,8 @@ class EditarMetodoPagoDialog(QDialog):
         self.btn_guardar.clicked.connect(self.accept)
         botones.addWidget(self.btn_guardar, 1)
         lay.addLayout(botones)
+        normalizar_botones(self)
+        igualar_fila(botones, btn_cancelar, self.btn_guardar, colores=("standard", "success"))
 
     def datos(self) -> tuple[str, str]:
         return (
@@ -517,6 +520,8 @@ class VentasWidget(QWidget):
         btn_imprimir.clicked.connect(self._imprimir)
         btn_row.addWidget(btn_imprimir)
 
+        btn_row2 = QHBoxLayout()
+
         btn_editar_pago = QPushButton("✏ Editar Pago")
         btn_editar_pago.setFixedHeight(34)
         btn_editar_pago.setCursor(Qt.PointingHandCursor)
@@ -536,7 +541,7 @@ class VentasWidget(QWidget):
             }
         """)
         btn_editar_pago.clicked.connect(self._editar_metodo_pago)
-        btn_row.addWidget(btn_editar_pago)
+        btn_row2.addWidget(btn_editar_pago)
         if not self.usuario.es_admin():
             btn_editar_pago.hide()
 
@@ -560,17 +565,22 @@ class VentasWidget(QWidget):
             }
         """)
         btn_anular.clicked.connect(self._anular)
-        btn_row.addWidget(btn_anular)
+        btn_row2.addWidget(btn_anular)
 
         if not self.usuario.es_admin():
             btn_anular.hide()
 
-        btn_row.addStretch()
+        btn_row2.addStretch()
         self.lbl_conteo = QLabel("Mostrando 0 ventas")
         self.lbl_conteo.setStyleSheet("color: #94a3b8; font-size: 12px; font-weight: 500;")
-        btn_row.addWidget(self.lbl_conteo)
+        btn_row2.addWidget(self.lbl_conteo)
 
         lay.addLayout(btn_row)
+        lay.addLayout(btn_row2)
+        normalizar_botones(self)
+        igualar_fila(btn_row, btn_ver, btn_ticket, btn_imprimir, tipo="standard")
+        igualar_fila(btn_row2, btn_editar_pago, btn_anular,
+                     tipo="standard", colores=("standard", "danger"))
 
         # Inicializar visibilidad de controles de filtro
         self._on_periodo_cambiado()
