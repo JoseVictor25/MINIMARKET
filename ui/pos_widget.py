@@ -40,7 +40,7 @@ from services.qr_service import generar_pixmap_qr_dinamico, generar_qr_pil
 from ui.caja_dialog import AperturaCajaDialog, CierreCajaDialog
 from ui.qr_dialog import GestionQRDialog, VisualizadorImagenDialog
 from config import CURRENCY, APP_NAME, QR_DIR
-from ui.styles import PALETTE, normalizar_botones, configurar_boton
+from ui.styles import PALETTE, normalizar_botones, configurar_boton, igualar_fila
 from services.barcode_service import normalizar_codigo_barras
 
 
@@ -265,6 +265,8 @@ class CobrarDialog(QDialog):
     def showEvent(self, event):
         super().showEvent(event)
         normalizar_botones(self)
+        igualar_fila(self._cobro_botones, self._btn_cancelar, self.btn_confirmar,
+                     colores=("standard", "success"), max_ancho=200)
         # Reajustar cuando la ventana cambia de monitor (distinto DPI).
         handle = self.windowHandle()
         if handle is not None and not getattr(self, "_pantalla_conectada", False):
@@ -1139,8 +1141,10 @@ class CobrarDialog(QDialog):
         ft_lay = QHBoxLayout(footer)
         ft_lay.setContentsMargins(20, 10, 20, 10)
         ft_lay.setSpacing(12)
+        ft_lay.addStretch()
 
-        btn_cancelar = QPushButton("✗  Cancelar (Esc)")
+        btn_cancelar = QPushButton("Cancelar")
+        btn_cancelar.setToolTip("Cancelar cobro (Esc)")
         btn_cancelar.setFixedHeight(44)
         btn_cancelar.setStyleSheet(f"""
             QPushButton {{
@@ -1154,9 +1158,10 @@ class CobrarDialog(QDialog):
             QPushButton:hover {{ background: {PALETTE['danger']}; color: white; }}
         """)
         btn_cancelar.clicked.connect(self.reject)
-        ft_lay.addWidget(btn_cancelar, 1)
+        ft_lay.addWidget(btn_cancelar)
 
-        self.btn_confirmar = QPushButton("✓  Confirmar Cobro  [Enter]")
+        self.btn_confirmar = QPushButton("Cobrar")
+        self.btn_confirmar.setToolTip("Confirmar cobro (Enter)")
         self.btn_confirmar.setFixedHeight(44)
         self.btn_confirmar.setStyleSheet(f"""
             QPushButton {{
@@ -1176,7 +1181,8 @@ class CobrarDialog(QDialog):
             }}
         """)
         self.btn_confirmar.clicked.connect(self._confirmar)
-        ft_lay.addWidget(self.btn_confirmar, 1)
+        ft_lay.addWidget(self.btn_confirmar)
+        self._cobro_botones, self._btn_cancelar = ft_lay, btn_cancelar
 
         root.addWidget(footer)
 
