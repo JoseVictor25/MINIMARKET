@@ -31,7 +31,7 @@ from services.caja_service import (
 )
 from services.print_service import imprimir_layout
 from config import CURRENCY, APP_NAME
-from ui.styles import PALETTE, configurar_calendario_elegante, normalizar_botones
+from ui.styles import PALETTE, configurar_calendario_elegante, normalizar_botones, igualar_fila
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -605,7 +605,6 @@ class ConfirmarAperturaPromptDialog(_BotonesCaja, QDialog):
 
         btn_cancel = QPushButton("Cancelar")
         btn_cancel.setCursor(Qt.PointingHandCursor)
-        btn_cancel.setFixedSize(110, 40)
         btn_cancel.setStyleSheet(f"""
             QPushButton {{
                 background-color: {PALETTE['bg_hover']};
@@ -620,10 +619,9 @@ class ConfirmarAperturaPromptDialog(_BotonesCaja, QDialog):
         btn_cancel.clicked.connect(self.reject)
         footer_lay.addWidget(btn_cancel)
 
-        btn_open = QPushButton("🔓  Abrir Caja Ahora")
+        btn_open = QPushButton("Abrir caja")
+        btn_open.setToolTip("Abrir caja ahora")
         btn_open.setCursor(Qt.PointingHandCursor)
-        btn_open.setFixedHeight(40)
-        btn_open.setMinimumWidth(165)
         btn_open.setStyleSheet("""
             QPushButton {
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
@@ -639,6 +637,8 @@ class ConfirmarAperturaPromptDialog(_BotonesCaja, QDialog):
         """)
         btn_open.clicked.connect(self.accept)
         footer_lay.addWidget(btn_open)
+        igualar_fila(footer_lay, btn_cancel, btn_open,
+                     colores=("standard", "success"), max_ancho=200)
 
         root.addWidget(footer)
 
@@ -804,8 +804,11 @@ class ConfirmarCierreDialog(_BotonesCaja, QDialog):
         # ── Botonera en Español y de Gran Tamaño ─────────────────────────────
         btn_lay = QHBoxLayout()
         btn_lay.setSpacing(12)
+        btn_lay.addStretch()
 
-        btn_cancelar = QPushButton("←  No, Volver")
+        btn_cancelar = QPushButton("Volver")
+        btn_cancelar.setToolTip("No cerrar caja; volver al arqueo")
+        btn_cancelar.setDefault(True)
         btn_cancelar.setFixedHeight(46)
         btn_cancelar.setCursor(Qt.PointingHandCursor)
         btn_cancelar.setStyleSheet(f"""
@@ -824,9 +827,10 @@ class ConfirmarCierreDialog(_BotonesCaja, QDialog):
             }}
         """)
         btn_cancelar.clicked.connect(self.reject)
-        btn_lay.addWidget(btn_cancelar, 1)
+        btn_lay.addWidget(btn_cancelar)
 
-        btn_confirmar = QPushButton("✓  Sí, Cerrar Caja")
+        btn_confirmar = QPushButton("Cerrar caja")
+        btn_confirmar.setToolTip("Confirmar cierre de caja")
         btn_confirmar.setFixedHeight(46)
         btn_confirmar.setCursor(Qt.PointingHandCursor)
         btn_confirmar.setStyleSheet("""
@@ -847,7 +851,9 @@ class ConfirmarCierreDialog(_BotonesCaja, QDialog):
             }
         """)
         btn_confirmar.clicked.connect(self.accept)
-        btn_lay.addWidget(btn_confirmar, 2)
+        btn_lay.addWidget(btn_confirmar)
+        igualar_fila(btn_lay, btn_cancelar, btn_confirmar,
+                     colores=("standard", "danger"), max_ancho=200)
 
         root.addLayout(btn_lay)
 
@@ -1192,8 +1198,10 @@ class CierreCajaDialog(_BotonesCaja, QDialog):
         root.addLayout(btn_row)
         btn_row = QHBoxLayout()
         btn_row.setSpacing(10)
+        btn_row.addStretch()
 
         self.btn_cancelar = QPushButton("Cancelar")
+        self.btn_cancelar.setDefault(True)
         self.btn_cancelar.setFixedHeight(46)
         self.btn_cancelar.setMinimumWidth(100)
         self.btn_cancelar.setCursor(Qt.PointingHandCursor)
@@ -1213,9 +1221,10 @@ class CierreCajaDialog(_BotonesCaja, QDialog):
             }}
         """)
         self.btn_cancelar.clicked.connect(self.reject)
-        btn_row.addWidget(self.btn_cancelar, 1)
+        btn_row.addWidget(self.btn_cancelar)
 
-        self.btn_cerrar = QPushButton("Confirmar cierre")
+        self.btn_cerrar = QPushButton("Cerrar caja")
+        self.btn_cerrar.setToolTip("Confirmar cierre de caja")
         self.btn_cerrar.setFixedHeight(46)
         self.btn_cerrar.setMinimumWidth(135)
         self.btn_cerrar.setCursor(Qt.PointingHandCursor)
@@ -1237,7 +1246,9 @@ class CierreCajaDialog(_BotonesCaja, QDialog):
             }
         """)
         self.btn_cerrar.clicked.connect(self._confirmar_cierre)
-        btn_row.addWidget(self.btn_cerrar, 1)
+        btn_row.addWidget(self.btn_cerrar)
+        igualar_fila(btn_row, self.btn_cancelar, self.btn_cerrar,
+                     colores=("standard", "danger"), max_ancho=200)
         root.addLayout(btn_row)
 
     def _actualizar_arqueo(self):
