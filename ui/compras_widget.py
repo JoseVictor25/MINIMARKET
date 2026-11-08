@@ -504,6 +504,8 @@ class NuevaCompraDialog(QDialog):
                     font-size: 12px;
                     font-weight: bold;
                     padding: 0 2px;
+                    min-height: 0px;
+                    max-height: 28px;
                 }
                 QPushButton:hover {
                     background-color: #7f1d1d;
@@ -515,6 +517,9 @@ class NuevaCompraDialog(QDialog):
             btn_quitar.clicked.connect(lambda _, row=i: self._eliminar_item(row))
 
             c_widget = QWidget()
+            c_widget.setObjectName("celda_accion")
+            c_widget.setStyleSheet("QWidget#celda_accion { background: transparent; }")
+            c_widget.setAttribute(Qt.WA_StyledBackground, False)
             c_lay = QHBoxLayout(c_widget)
             c_lay.setContentsMargins(6, 4, 6, 4)
             c_lay.addWidget(btn_quitar, 1, Qt.AlignVCenter)

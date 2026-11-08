@@ -20,7 +20,7 @@ from database import Base
 import models  # noqa: F401
 from models.categoria import Categoria
 from models.producto import Producto
-from ui.styles import BUTTON_COLORS, BUTTON_METRICS, STYLESHEET, configurar_boton, igualar_fila
+from ui.styles import BUTTON_COLORS, BUTTON_METRICS, STYLESHEET, PALETTE, configurar_boton, igualar_fila
 
 
 def _luminancia(color):
@@ -156,58 +156,88 @@ def test_cobro_exitoso_muestra_vuelto_sin_superponer_etiquetas():
 
 
 def test_quitar_compra_cabe_en_su_celda(tmp_path):
-    from PyQt5.QtCore import QPoint, QRect
+    from PyQt5.QtCore import QPoint, QRect, Qt
     from PyQt5.QtTest import QTest
     from PyQt5.QtWidgets import QSizePolicy
     app = QApplication.instance() or QApplication([])
-    engine = create_engine(f"sqlite:///{tmp_path / 'compra.db'}")
-    Base.metadata.create_all(engine)
-    Session = sessionmaker(bind=engine)
-    from ui.compras_widget import NuevaCompraDialog
-    with Session() as sesion:
-        dialogo = NuevaCompraDialog(session=sesion)
-        dialogo._items = [{
-            "producto": SimpleNamespace(codigo_barras="001", descripcion="Producto"),
-            "cantidad": Decimal("1"), "precio_unitario_bs": Decimal("2"),
-        }]
-        dialogo._refrescar_tabla()
-        dialogo.show()
-        app.processEvents()
-        celda = dialogo.tabla.cellWidget(0, 5)
-        boton = celda.findChild(QPushButton)
-        margen = celda.layout().contentsMargins()
-        assert dialogo.tabla.columnWidth(5) == 110
-        assert dialogo.tabla.rowHeight(0) == 40
-        assert (margen.left(), margen.top(), margen.right(), margen.bottom()) == (6, 4, 6, 4)
-        assert boton.minimumHeight() == 22
-        assert boton.maximumHeight() == BUTTON_METRICS["compact"][0] == 28
-        assert boton.sizePolicy().verticalPolicy() == QSizePolicy.Expanding
-        assert 22 <= boton.height() <= 28
-        assert boton.width() <= celda.width() - margen.left() - margen.right()
-        assert boton.fontMetrics().horizontalAdvance(boton.text()) + boton.iconSize().width() + 10 <= boton.width()
-        assert "min-height" not in boton.styleSheet()
-        assert "max-height" not in boton.styleSheet()
-        for ancho in (900, 1000):
-            dialogo.resize(ancho, 700)
+    estilo_anterior = app.styleSheet()
+    app.setStyleSheet(STYLESHEET)
+    try:
+        engine = create_engine(f"sqlite:///{tmp_path / 'compra.db'}")
+        Base.metadata.create_all(engine)
+        Session = sessionmaker(bind=engine)
+        from ui.compras_widget import NuevaCompraDialog
+        with Session() as sesion:
+            dialogo = NuevaCompraDialog(session=sesion)
+            dialogo._items = [
+                {
+                    "producto": SimpleNamespace(codigo_barras="001", descripcion="Producto 1"),
+                    "cantidad": Decimal("1"), "precio_unitario_bs": Decimal("2"),
+                },
+                {
+                    "producto": SimpleNamespace(codigo_barras="002", descripcion="Producto 2"),
+                    "cantidad": Decimal("2"), "precio_unitario_bs": Decimal("4"),
+                },
+            ]
+            dialogo._refrescar_tabla()
+            dialogo.show()
             app.processEvents()
-            rect_celda = QRect(celda.mapTo(dialogo.tabla, QPoint(0, 0)), celda.size())
-            rect_boton = QRect(boton.mapTo(dialogo.tabla, QPoint(0, 0)), boton.size())
-            assert rect_celda.contains(rect_boton)
-            assert dialogo.tabla.rowHeight(0) == 40
-        dialogo._refrescar_tabla()
-        app.processEvents()
-        assert dialogo.tabla.rowHeight(0) == 40
-        boton = dialogo.tabla.cellWidget(0, 5).findChild(QPushButton)
-        assert boton.grab().toImage().pixelColor(5, 14).name() == "#991b1b"
-        # El plugin offscreen no siempre traslada el cursor con escala fraccionaria.
-        if os.environ.get("QT_SCALE_FACTOR", "1") == "1":
-            QTest.mouseMove(boton, QPoint(5, 14))
+
+            for row in range(2):
+                celda = dialogo.tabla.cellWidget(row, 5)
+                boton = celda.findChild(QPushButton)
+                margen = celda.layout().contentsMargins()
+                assert dialogo.tabla.columnWidth(5) == 110
+                assert dialogo.tabla.rowHeight(row) == 40
+                assert (margen.left(), margen.top(), margen.right(), margen.bottom()) == (6, 4, 6, 4)
+                assert boton.width() <= celda.width() - margen.left() - margen.right()
+                assert "min-height: 0px" in boton.styleSheet()
+                assert "max-height: 28px" in boton.styleSheet()
+                assert celda.objectName() == "celda_accion"
+
+            for ancho in (900, 1000):
+                dialogo.resize(ancho, 700)
+                app.processEvents()
+                for row in range(2):
+                    celda = dialogo.tabla.cellWidget(row, 5)
+                    boton = celda.findChild(QPushButton)
+                    rect_celda = QRect(celda.mapTo(dialogo.tabla, QPoint(0, 0)), celda.size())
+                    rect_boton = QRect(boton.mapTo(dialogo.tabla, QPoint(0, 0)), boton.size())
+                    assert rect_celda.contains(rect_boton)
+                    assert dialogo.tabla.rowHeight(row) == 40
+
+            # Comprobar que el contenedor no pinta fondo opaco (#111827)
+            img = dialogo.tabla.grab().toImage()
+            for row in range(2):
+                celda = dialogo.tabla.cellWidget(row, 5)
+                assert "background: transparent" in celda.styleSheet()
+                assert celda.objectName() == "celda_accion"
+                pt = celda.mapTo(dialogo.tabla, QPoint(2, 2))
+                color_fondo = img.pixelColor(pt).name()
+                assert color_fondo != PALETTE["bg_base"], f"Fondo opaco detectado: {color_fondo}"
+
+            dialogo._refrescar_tabla()
             app.processEvents()
-            assert boton.grab().toImage().pixelColor(5, 14).name() == "#7f1d1d"
-        else:
-            assert "#7f1d1d" in boton.styleSheet()
-        dialogo.close()
-    engine.dispose()
+            for row in range(2):
+                celda = dialogo.tabla.cellWidget(row, 5)
+                boton = celda.findChild(QPushButton)
+                rect_celda = QRect(celda.mapTo(dialogo.tabla, QPoint(0, 0)), celda.size())
+                rect_boton = QRect(boton.mapTo(dialogo.tabla, QPoint(0, 0)), boton.size())
+                assert rect_celda.contains(rect_boton)
+
+            boton0 = dialogo.tabla.cellWidget(0, 5).findChild(QPushButton)
+            assert boton0.grab().toImage().pixelColor(10, 7).name() == "#991b1b"
+            # El plugin offscreen no siempre traslada el cursor con escala fraccionaria.
+            if os.environ.get("QT_SCALE_FACTOR", "1") == "1":
+                QTest.mouseMove(boton0, QPoint(10, 7))
+                app.processEvents()
+                assert boton0.grab().toImage().pixelColor(10, 7).name() == "#7f1d1d"
+            else:
+                assert "#7f1d1d" in boton0.styleSheet()
+            dialogo.close()
+        engine.dispose()
+    finally:
+        app.setStyleSheet(estilo_anterior)
 
 
 def test_inventario_cabe_en_ancho_logico_reducido(tmp_path):
