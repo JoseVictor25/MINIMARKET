@@ -57,8 +57,10 @@ class ReportesWidget(QWidget):
         lbl_tit.setFont(QFont("Segoe UI", 16, QFont.Bold))
         lbl_tit.setStyleSheet(f"color: {PALETTE['white']}; letter-spacing: 1px;")
         root.addWidget(lbl_tit)
+        top_bar.addStretch()
 
-        self.btn_export_excel = QPushButton("📊 Exportar Excel")
+        self.btn_export_excel = QPushButton("Excel")
+        self.btn_export_excel.setToolTip("Exportar reporte de ventas a Excel")
         self.btn_export_excel.setFixedHeight(36)
         self.btn_export_excel.setStyleSheet(f"""
             QPushButton {{
@@ -78,7 +80,8 @@ class ReportesWidget(QWidget):
         self.btn_export_excel.clicked.connect(self._exportar_excel)
         top_bar.addWidget(self.btn_export_excel)
 
-        self.btn_pdf = QPushButton("📄 Informe PDF Oficial")
+        self.btn_pdf = QPushButton("Informe PDF")
+        self.btn_pdf.setToolTip("Generar informe PDF oficial")
         self.btn_pdf.setFixedHeight(36)
         self.btn_pdf.setStyleSheet(f"""
             QPushButton {{
@@ -165,6 +168,7 @@ class ReportesWidget(QWidget):
         btn_mes.setStyleSheet(btn_estilo_rapido)
         btn_mes.clicked.connect(self._set_periodo_mes_actual)
         rapidos.addWidget(btn_mes)
+        rapidos.addStretch()
 
         f_lay.addLayout(rapidos)
 
@@ -327,8 +331,10 @@ class ReportesWidget(QWidget):
 
         root.addWidget(self.tabs, 1)
         normalizar_botones(self)
-        igualar_fila(top_bar, self.btn_export_excel, self.btn_pdf, tipo="standard")
-        igualar_fila(rapidos, btn_hoy, btn_ayer, btn_7d, btn_mes, tipo="standard")
+        igualar_fila(top_bar, self.btn_export_excel, self.btn_pdf,
+                     tipo="standard", max_ancho=180)
+        igualar_fila(rapidos, btn_hoy, btn_ayer, btn_7d, btn_mes,
+                     tipo="standard", max_ancho=180)
 
     # ── Construcción de Pestañas ──────────────────────────────────────────────
 
