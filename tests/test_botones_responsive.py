@@ -64,6 +64,36 @@ def test_igualar_fila_con_tope_iguala_ancho_real():
     contenedor.close()
 
 
+def test_productos_y_registrar_compra_no_estiran_botones(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    engine = create_engine(f"sqlite:///{tmp_path / 'botones.db'}")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    usuario = SimpleNamespace(es_admin=lambda: True)
+    from ui.productos_widget import ProductosWidget
+    from ui.compras_widget import NuevaCompraDialog
+    with patch("ui.productos_widget.SessionLocal", Session):
+        productos = ProductosWidget(usuario)
+    with Session() as sesion:
+        compra = NuevaCompraDialog(usuario, sesion)
+        for ventana, nombres, tope in (
+            (productos, ("✏ Editar", "Estado"), 180),
+            (compra, ("Cancelar", "Registrar"), 200),
+        ):
+            ventana.resize(1000, 700)
+            ventana.show()
+            app.processEvents()
+            botones = {b.text(): b for b in ventana.findChildren(QPushButton)}
+            primero, segundo = (botones[nombre] for nombre in nombres)
+            assert primero.width() == segundo.width() <= tope
+            assert primero.height() == segundo.height()
+            for boton in (primero, segundo):
+                assert boton.fontMetrics().horizontalAdvance(boton.text()) + 32 <= boton.width()
+            ventana.close()
+    productos.session.close()
+    engine.dispose()
+
+
 def test_inventario_cabe_en_ancho_logico_reducido(tmp_path):
     app = QApplication.instance() or QApplication([])
     estilo_anterior = app.styleSheet()

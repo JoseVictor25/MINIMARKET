@@ -763,6 +763,8 @@ class ProductosWidget(QWidget):
         self._build_ui()
         self._cargar_productos()
         normalizar_botones(self)
+        igualar_fila(self._acciones_productos, self._btn_editar, self._btn_toggle,
+                     tipo="standard", max_ancho=180)
 
     def actualizar(self):
         """Recarga el catálogo conservando el filtro de búsqueda actual."""
@@ -829,12 +831,16 @@ class ProductosWidget(QWidget):
         btn_row = QHBoxLayout()
         btn_editar = QPushButton("✏ Editar")
         btn_editar.clicked.connect(self._editar_producto)
-        btn_row.addWidget(btn_editar, 1)
+        btn_row.addWidget(btn_editar)
 
-        btn_toggle = QPushButton("🚫 Desactivar / Activar")
+        btn_toggle = QPushButton("Estado")
+        btn_toggle.setToolTip("Activar o desactivar el producto seleccionado")
         btn_toggle.setObjectName("btn_warning")
         btn_toggle.clicked.connect(self._toggle_activo)
-        btn_row.addWidget(btn_toggle, 1)
+        btn_row.addWidget(btn_toggle)
+        self._acciones_productos = btn_row
+        self._btn_editar = btn_editar
+        self._btn_toggle = btn_toggle
 
         if not es_admin:
             btn_editar.hide()

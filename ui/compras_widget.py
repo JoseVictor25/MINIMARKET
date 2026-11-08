@@ -256,8 +256,6 @@ class NuevaCompraDialog(QDialog):
         bottom.addStretch()
 
         btn_cancel = QPushButton("Cancelar")
-        btn_cancel.setFixedHeight(38)
-        btn_cancel.setFixedWidth(100)
         btn_cancel.setCursor(Qt.PointingHandCursor)
         btn_cancel.clicked.connect(self.reject)
         bottom.addWidget(btn_cancel)
@@ -265,7 +263,6 @@ class NuevaCompraDialog(QDialog):
         btn_guardar = QPushButton("Registrar")
         btn_guardar.setToolTip("Registrar compra")
         btn_guardar.setObjectName("btn_success")
-        btn_guardar.setFixedHeight(38)
         btn_guardar.setCursor(Qt.PointingHandCursor)
         btn_guardar.setStyleSheet("""
             QPushButton {
