@@ -20,7 +20,7 @@ from database import SessionLocal
 from models.producto import Producto
 from models.categoria import Categoria
 from config import CURRENCY
-from ui.styles import PALETTE, normalizar_botones
+from ui.styles import PALETTE, normalizar_botones, igualar_fila
 from services.barcode_service import normalizar_codigo_barras, consultar_producto_online
 
 
@@ -55,6 +55,8 @@ class ProductoDialog(QDialog):
         self.resize(560, self.height())
         self._build_ui()
         normalizar_botones(self)
+        igualar_fila(self._btn_row, self._btn_cancel, self.btn_save,
+                     colores=("standard", "success"), max_ancho=200)
 
         if producto:
             self._cargar_datos()
@@ -475,8 +477,10 @@ class ProductoDialog(QDialog):
         # ── Botones de Acción (Footer) ─────────────────────────────────
         btn_row = QHBoxLayout()
         btn_row.setSpacing(12)
+        btn_row.addStretch()
 
-        btn_cancel = QPushButton("✗ Cancelar (Esc)")
+        btn_cancel = QPushButton("Cancelar")
+        btn_cancel.setToolTip("Cancelar (Esc)")
         btn_cancel.setFixedHeight(44)
         btn_cancel.setAutoDefault(False)
         btn_cancel.setCursor(Qt.PointingHandCursor)
@@ -496,9 +500,10 @@ class ProductoDialog(QDialog):
             }
         """)
         btn_cancel.clicked.connect(self.reject)
-        btn_row.addWidget(btn_cancel, 1)
+        btn_row.addWidget(btn_cancel)
 
-        self.btn_save = QPushButton("💾 Guardar Producto")
+        self.btn_save = QPushButton("Guardar")
+        self.btn_save.setToolTip("Guardar producto")
         self.btn_save.setFixedHeight(44)
         self.btn_save.setAutoDefault(False)
         self.btn_save.setCursor(Qt.PointingHandCursor)
@@ -524,7 +529,8 @@ class ProductoDialog(QDialog):
             }}
         """)
         self.btn_save.clicked.connect(self._guardar)
-        btn_row.addWidget(self.btn_save, 1)
+        btn_row.addWidget(self.btn_save)
+        self._btn_row, self._btn_cancel = btn_row, btn_cancel
 
         root.addLayout(btn_row)
 
