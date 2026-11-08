@@ -85,7 +85,7 @@ def normalizar_botones(contenedor):
             continue
         texto = boton.text().casefold()
         ancestro = boton.parentWidget()
-        en_tabla = False
+        en_tabla = isinstance(contenedor, QTableWidget)
         while ancestro is not None and ancestro is not contenedor:
             if isinstance(ancestro, QTableWidget):
                 en_tabla = True

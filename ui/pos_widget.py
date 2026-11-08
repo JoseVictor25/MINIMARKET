@@ -40,7 +40,7 @@ from services.qr_service import generar_pixmap_qr_dinamico, generar_qr_pil
 from ui.caja_dialog import AperturaCajaDialog, CierreCajaDialog
 from ui.qr_dialog import GestionQRDialog, VisualizadorImagenDialog
 from config import CURRENCY, APP_NAME, QR_DIR
-from ui.styles import PALETTE
+from ui.styles import PALETTE, normalizar_botones
 from services.barcode_service import normalizar_codigo_barras
 
 
@@ -71,6 +71,7 @@ class BuscarProductoDialog(QDialog):
         self.setMinimumSize(640, 460)
         self.setModal(True)
         self._build_ui()
+        normalizar_botones(self)
 
     def _build_ui(self):
         lay = QVBoxLayout(self)
@@ -239,19 +240,40 @@ class CobrarDialog(QDialog):
         self._timer_checking.timeout.connect(self._finalizar_checking_animacion)
 
         self.setWindowTitle("💳  Cobro de Venta – Mini Market")
-        self.setFixedSize(800, 580)
+        # Tamaño mínimo cómodo; el tamaño real se ajusta a la pantalla activa
+        # para que no se distorsione al mover la ventana entre el monitor del
+        # laptop y un monitor externo con distinto escalado.
+        self.setMinimumSize(620, 460)
+        self.resize(820, 560)
         self.setModal(True)
         self._build_ui()
 
-    def showEvent(self, event):
-        super().showEvent(event)
+    def _ajustar_a_pantalla(self, *args):
+        """Limita el diálogo a la pantalla actual y lo centra en ella."""
         try:
-            screen = QApplication.primaryScreen().availableGeometry()
-            x = screen.x() + (screen.width() - self.width()) // 2
-            y = screen.y() + (screen.height() - self.height()) // 2
-            self.move(max(10, x), max(10, y))
+            pantalla = self.screen() or QApplication.primaryScreen()
+            disp = pantalla.availableGeometry()
+            ancho = max(self.minimumWidth(), min(820, int(disp.width() * 0.92)))
+            alto = max(self.minimumHeight(), min(560, int(disp.height() * 0.92)))
+            self.resize(ancho, alto)
+            x = disp.x() + max(0, (disp.width() - ancho) // 2)
+            y = disp.y() + max(0, (disp.height() - alto) // 2)
+            self.move(max(disp.x(), x), max(disp.y(), y))
         except Exception:
             pass
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        normalizar_botones(self)
+        # Reajustar cuando la ventana cambia de monitor (distinto DPI).
+        handle = self.windowHandle()
+        if handle is not None and not getattr(self, "_pantalla_conectada", False):
+            try:
+                handle.screenChanged.connect(self._ajustar_a_pantalla)
+                self._pantalla_conectada = True
+            except Exception:
+                pass
+        self._ajustar_a_pantalla()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -316,17 +338,18 @@ class CobrarDialog(QDialog):
         self._btn_pago = {}
         metodos = [
             ("💵", "efectivo", "Efectivo"),
-            ("📱", "QR", "QR Simple"),
+            ("📱", "QR", "QR"),
             ("💳", "tarjeta", "Tarjeta"),
-            ("🔄", "mixto", "Mixto (QR+Efec)"),
+            ("🔄", "mixto", "Mixto"),
         ]
         for icon, m_id, label in metodos:
             btn = QPushButton(f"{icon}  {label}")
             btn.setCheckable(True)
-            btn.setFixedHeight(40)
+            btn.setMinimumHeight(40)
+            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             btn.setStyleSheet(self._estilo_btn_pago(False))
             btn.clicked.connect(lambda _, m=m_id: self._seleccionar_metodo(m))
-            btns_pago.addWidget(btn)
+            btns_pago.addWidget(btn, 1)
             self._btn_pago[m_id] = btn
         body_lay.addLayout(btns_pago)
 
@@ -1094,7 +1117,15 @@ class CobrarDialog(QDialog):
 
         body_lay.addStretch()
 
-        root.addWidget(body, 1)
+        # El cuerpo se desplaza si la pantalla es baja; la cabecera y la
+        # botonera de confirmación permanecen siempre visibles.
+        scroll_body = QScrollArea()
+        scroll_body.setWidgetResizable(True)
+        scroll_body.setFrameShape(QFrame.NoFrame)
+        scroll_body.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_body.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        scroll_body.setWidget(body)
+        root.addWidget(scroll_body, 1)
 
         # ── Pie: Botones Cancelar / Confirmar ─────────────────────────────────
         footer = QFrame()
@@ -1145,7 +1176,7 @@ class CobrarDialog(QDialog):
             }}
         """)
         self.btn_confirmar.clicked.connect(self._confirmar)
-        ft_lay.addWidget(self.btn_confirmar, 2)
+        ft_lay.addWidget(self.btn_confirmar, 1)
 
         root.addWidget(footer)
 
@@ -1755,45 +1786,53 @@ class CobroExitosoDialog(QDialog):
         self.venta_info = venta_info
         self.pdf_path = pdf_path
         self.setWindowTitle("✓ Venta Completada – Caja Mini Market")
-        self.setMinimumSize(540, 620)
-        self.resize(550, 640)
+        # Ventana compacta: la información esencial cabe sin ocupar toda la
+        # pantalla en laptops de 1280×720 lógicos.
+        self.setMinimumSize(460, 500)
+        self.resize(500, 560)
         self.setModal(True)
         self._build_ui()
 
     def showEvent(self, event):
         super().showEvent(event)
+        normalizar_botones(self)
         try:
-            screen = QApplication.primaryScreen().availableGeometry()
-            x = screen.x() + (screen.width() - self.width()) // 2
-            y = screen.y() + (screen.height() - self.height()) // 2
-            self.move(max(10, x), max(10, y))
+            pantalla = self.screen() or QApplication.primaryScreen()
+            disp = pantalla.availableGeometry()
+            ancho = max(self.minimumWidth(), min(self.width(), int(disp.width() * 0.9)))
+            alto = max(self.minimumHeight(), min(self.height(), int(disp.height() * 0.9)))
+            self.resize(ancho, alto)
+            x = disp.x() + max(0, (disp.width() - ancho) // 2)
+            y = disp.y() + max(0, (disp.height() - alto) // 2)
+            self.move(max(disp.x(), x), max(disp.y(), y))
         except Exception:
             pass
 
     def _build_ui(self):
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(24, 22, 24, 22)
-        lay.setSpacing(14)
+        lay.setContentsMargins(20, 16, 20, 16)
+        lay.setSpacing(10)
 
         # Encabezado con Icono
         hdr_lay = QVBoxLayout()
         hdr_lay.setAlignment(Qt.AlignCenter)
-        hdr_lay.setSpacing(6)
+        hdr_lay.setSpacing(4)
 
         lbl_icon = QLabel("✅")
         lbl_icon.setAlignment(Qt.AlignCenter)
-        lbl_icon.setStyleSheet("font-size: 50px; border: none; background: transparent;")
+        lbl_icon.setStyleSheet("font-size: 36px; border: none; background: transparent;")
         hdr_lay.addWidget(lbl_icon)
 
-        lbl_tit = QLabel("¡COBRO REGISTRADO CON ÉXITO!")
+        lbl_tit = QLabel("¡COBRO REGISTRADO!")
         lbl_tit.setAlignment(Qt.AlignCenter)
-        lbl_tit.setStyleSheet(f"font-size: 22px; font-weight: 900; color: {PALETTE['success']}; border: none; background: transparent;")
+        lbl_tit.setWordWrap(True)
+        lbl_tit.setStyleSheet(f"font-size: 18px; font-weight: 900; color: {PALETTE['success']}; border: none; background: transparent;")
         hdr_lay.addWidget(lbl_tit)
 
         num_tx = self.venta_info.get("numero", 0)
         lbl_sub = QLabel(f"Comprobante N° #{num_tx:06d}")
         lbl_sub.setAlignment(Qt.AlignCenter)
-        lbl_sub.setStyleSheet(f"font-size: 14px; font-weight: 600; color: {PALETTE['text_secondary']}; border: none; background: transparent;")
+        lbl_sub.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {PALETTE['text_secondary']}; border: none; background: transparent;")
         hdr_lay.addWidget(lbl_sub)
 
         lay.addLayout(hdr_lay)
@@ -1813,17 +1852,18 @@ class CobroExitosoDialog(QDialog):
             }}
         """)
         c_lay = QVBoxLayout(card)
-        c_lay.setContentsMargins(18, 16, 18, 16)
-        c_lay.setSpacing(12)
+        c_lay.setContentsMargins(16, 12, 16, 12)
+        c_lay.setSpacing(8)
 
         # Fila Total
         f_total = QHBoxLayout()
         lbl_t_txt = QLabel("Total de la compra:")
+        lbl_t_txt.setWordWrap(True)
         lbl_t_txt.setStyleSheet(f"color: {PALETTE['text_secondary']}; font-size: 14px; font-weight: 600;")
         f_total.addWidget(lbl_t_txt)
         f_total.addStretch()
         lbl_t_val = QLabel(f"{CURRENCY} {self.venta_info['total']:.2f}")
-        lbl_t_val.setStyleSheet(f"font-size: 26px; font-weight: 900; color: {PALETTE['white']};")
+        lbl_t_val.setStyleSheet(f"font-size: 22px; font-weight: 900; color: {PALETTE['white']};")
         f_total.addWidget(lbl_t_val)
         c_lay.addLayout(f_total)
 
@@ -1831,12 +1871,15 @@ class CobroExitosoDialog(QDialog):
         metodo = self.venta_info["metodo"]
         f_metodo = QHBoxLayout()
         lbl_m_txt = QLabel("Método de pago:")
+        lbl_m_txt.setWordWrap(True)
         lbl_m_txt.setStyleSheet(f"color: {PALETTE['text_secondary']}; font-size: 14px; font-weight: 600;")
         f_metodo.addWidget(lbl_m_txt)
         f_metodo.addStretch()
 
         if metodo == "mixto":
             lbl_m_val = QLabel("🔄 Pago Mixto (QR + Efectivo)")
+            lbl_m_val.setWordWrap(True)
+            lbl_m_val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             lbl_m_val.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {PALETTE['accent']};")
             f_metodo.addWidget(lbl_m_val)
             c_lay.addLayout(f_metodo)
@@ -1900,6 +1943,8 @@ class CobroExitosoDialog(QDialog):
                 color_m = PALETTE['text_primary']
 
             lbl_m_val = QLabel(det_pago)
+            lbl_m_val.setWordWrap(True)
+            lbl_m_val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             lbl_m_val.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {color_m};")
             f_metodo.addWidget(lbl_m_val)
             c_lay.addLayout(f_metodo)
@@ -1956,18 +2001,19 @@ class CobroExitosoDialog(QDialog):
                 }
             """)
             vb_lay = QVBoxLayout(vuelto_box)
-            vb_lay.setContentsMargins(18, 14, 18, 14)
+            vb_lay.setContentsMargins(16, 10, 16, 10)
             vb_lay.setAlignment(Qt.AlignCenter)
-            vb_lay.setSpacing(6)
+            vb_lay.setSpacing(4)
 
             lbl_vb_tit = QLabel("💵 VUELTO A ENTREGAR AL CLIENTE (EN EFECTIVO):")
             lbl_vb_tit.setAlignment(Qt.AlignCenter)
+            lbl_vb_tit.setWordWrap(True)
             lbl_vb_tit.setStyleSheet("color: #a7f3d0; font-size: 13px; font-weight: bold; letter-spacing: 0.5px;")
             vb_lay.addWidget(lbl_vb_tit)
 
             lbl_vb_val = QLabel(f"{CURRENCY} {vuelto:.2f}")
             lbl_vb_val.setAlignment(Qt.AlignCenter)
-            lbl_vb_val.setStyleSheet("font-size: 38px; font-weight: 900; color: #4ade80;")
+            lbl_vb_val.setStyleSheet("font-size: 30px; font-weight: 900; color: #4ade80;")
             vb_lay.addWidget(lbl_vb_val)
 
             lbl_vb_sub = QLabel("Entregue el dinero de cambio al cliente antes de continuar.")
@@ -1998,15 +2044,13 @@ class CobroExitosoDialog(QDialog):
         c_lay.addWidget(vuelto_box)
         lay.addWidget(card)
 
-        lay.addStretch()
-
         # Botones de Acción
         actions_lay = QVBoxLayout()
-        actions_lay.setSpacing(12)
+        actions_lay.setSpacing(8)
 
         if self.pdf_path:
             btn_ticket = QPushButton("🖨️  Ver / Imprimir Ticket PDF")
-            btn_ticket.setFixedHeight(46)
+            btn_ticket.setFixedHeight(40)
             btn_ticket.setStyleSheet(f"""
                 QPushButton {{
                     background: {PALETTE['bg_hover']};
@@ -2025,7 +2069,7 @@ class CobroExitosoDialog(QDialog):
             actions_lay.addWidget(btn_ticket)
 
             btn_imprimir = QPushButton("🖨  Imprimir Ticket")
-            btn_imprimir.setFixedHeight(46)
+            btn_imprimir.setFixedHeight(40)
             btn_imprimir.setStyleSheet(f"""
                 QPushButton {{
                     background: {PALETTE['bg_hover']};
@@ -2044,7 +2088,7 @@ class CobroExitosoDialog(QDialog):
             actions_lay.addWidget(btn_imprimir)
 
         self.btn_siguiente = QPushButton("➡️  Siguiente Venta  [Enter]")
-        self.btn_siguiente.setFixedHeight(50)
+        self.btn_siguiente.setFixedHeight(44)
         self.btn_siguiente.setDefault(True)
         self.btn_siguiente.setStyleSheet(f"""
             QPushButton {{
@@ -2197,6 +2241,9 @@ class POSWidget(QWidget):
             """)
             shortcuts_box.addWidget(chip)
             self._chips_atajos.append(chip)
+            # Se muestran solo los dos primeros hasta que el responsive mida
+            # el ancho real disponible. Así el POS no fuerza un ancho mínimo.
+            chip.setVisible(len(self._chips_atajos) <= 2)
 
         sub_header.addLayout(shortcuts_box)
         sub_header.addStretch()
@@ -2207,7 +2254,7 @@ class POSWidget(QWidget):
         right_header.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
         # Badge indicador de Sesión de Caja
-        self.badge_caja = QLabel("🔴 Caja Cerrada")
+        self.badge_caja = QLabel("Caja Cerrada")
         self.badge_caja.setFixedHeight(36)
         self.badge_caja.setAlignment(Qt.AlignCenter)
         self.badge_caja.setStyleSheet("""
@@ -2215,14 +2262,14 @@ class POSWidget(QWidget):
             color: #b91c1c;
             border: 2px solid #b91c1c;
             border-radius: 8px;
-            padding: 4px 12px;
+            padding: 4px 10px;
             font-size: 13px;
             font-weight: bold;
         """)
         right_header.addWidget(self.badge_caja)
 
         # Botón de Apertura / Cierre rápido de Caja
-        self.btn_caja_accion = QPushButton("🔓 Abrir Caja")
+        self.btn_caja_accion = QPushButton("Abrir Caja")
         self.btn_caja_accion.setFixedHeight(36)
         self.btn_caja_accion.setCursor(Qt.PointingHandCursor)
         self.btn_caja_accion.setStyleSheet("""
@@ -2231,7 +2278,7 @@ class POSWidget(QWidget):
                 color: #ffffff;
                 border: 2px solid #000000;
                 border-radius: 8px;
-                padding: 4px 14px;
+                padding: 4px 10px;
                 font-size: 13px;
                 font-weight: bold;
             }
@@ -2252,11 +2299,12 @@ class POSWidget(QWidget):
         lbl_cajero.setFixedHeight(36)
         lbl_cajero.setAlignment(Qt.AlignVCenter)
         lbl_cajero.setStyleSheet(f"color: {fg_pos}; font-size: 13px; font-weight: bold; background: transparent;")
+        lbl_cajero.setVisible(False)
         self._lbl_cajero = lbl_cajero
         right_header.addWidget(lbl_cajero)
 
         # Botón de Configuración de Código QR para Cobrar
-        self.btn_mi_qr = QPushButton("📱 Mi QR")
+        self.btn_mi_qr = QPushButton("Mi QR")
         self.btn_mi_qr.setFixedHeight(36)
         self.btn_mi_qr.setCursor(Qt.PointingHandCursor)
         self.btn_mi_qr.clicked.connect(self._abrir_gestion_qr)
@@ -2886,6 +2934,11 @@ class POSWidget(QWidget):
         elif (obj is getattr(self, "_wm_card", None) or
               (hasattr(self, "tabla") and obj is self.tabla.viewport())) and event.type() == QEvent.Resize:
             self._reposicionar_watermark()
+        elif obj is getattr(self, "_viewport_padre", None) and event.type() == QEvent.Resize:
+            # El POS está dentro de un QScrollArea: el ancho útil cambia sin
+            # que el propio widget reciba un resizeEvent (porque conserva su
+            # ancho mínimo). Recalcular aquí evita el corte lateral.
+            self._aplicar_responsive()
         return super().eventFilter(obj, event)
 
     def _on_completer_item_activated(self, index: QModelIndex):
@@ -3254,6 +3307,7 @@ class POSWidget(QWidget):
             self.lista_resumen.addItem(f"• {p.descripcion[:22]}  ×{c_txt}")
 
         self.tabla.blockSignals(False)
+        normalizar_botones(self.tabla)
 
     def _on_cell_changed(self, row: int, col: int):
         pass
@@ -3322,8 +3376,12 @@ class POSWidget(QWidget):
         # Mostrar badge/botón para cajeros, admins y usuarios con doble rol
 
         if self._caja_activa_id:
-            self.badge_caja.setText(
-                f"🟢 Caja #{self._caja_activa_id} · Turno: {self._caja_activa_turno} · Base: {CURRENCY} {self._caja_activa_monto_inicial:.2f}"
+            # Texto compacto para no ensanchar el encabezado del POS; el
+            # detalle completo queda disponible en el tooltip.
+            self.badge_caja.setText(f"Caja #{self._caja_activa_id}")
+            self.badge_caja.setToolTip(
+                f"Caja abierta · Turno: {self._caja_activa_turno} · "
+                f"Base inicial: {CURRENCY} {self._caja_activa_monto_inicial:.2f}"
             )
             self.badge_caja.setFixedHeight(36)
             self.badge_caja.setStyleSheet("""
@@ -3331,12 +3389,12 @@ class POSWidget(QWidget):
                 color: #15803d;
                 border: 2px solid #16a34a;
                 border-radius: 8px;
-                padding: 4px 14px;
+                padding: 4px 10px;
                 font-size: 13px;
                 font-weight: bold;
             """)
             self.badge_caja.show()
-            self.btn_caja_accion.setText("🔒 Cerrar Caja")
+            self.btn_caja_accion.setText("Cerrar Caja")
             self.btn_caja_accion.setFixedHeight(36)
             self.btn_caja_accion.setStyleSheet("""
                 QPushButton {
@@ -3344,7 +3402,7 @@ class POSWidget(QWidget):
                     color: #ffffff;
                     border: 2px solid #b91c1c;
                     border-radius: 8px;
-                    padding: 4px 16px;
+                    padding: 4px 10px;
                     font-size: 13px;
                     font-weight: bold;
                 }
@@ -3354,19 +3412,20 @@ class POSWidget(QWidget):
             """)
             self.btn_caja_accion.show()
         else:
-            self.badge_caja.setText("🔴 Caja Cerrada")
+            self.badge_caja.setText("Caja Cerrada")
+            self.badge_caja.setToolTip("No hay una sesión de caja abierta para este usuario.")
             self.badge_caja.setFixedHeight(36)
             self.badge_caja.setStyleSheet("""
                 background: #ffffff;
                 color: #b91c1c;
                 border: 2px solid #b91c1c;
                 border-radius: 8px;
-                padding: 4px 14px;
+                padding: 4px 10px;
                 font-size: 13px;
                 font-weight: bold;
             """)
             self.badge_caja.show()
-            self.btn_caja_accion.setText("🔓 Abrir Caja")
+            self.btn_caja_accion.setText("Abrir Caja")
             self.btn_caja_accion.setFixedHeight(36)
             self.btn_caja_accion.setStyleSheet("""
                 QPushButton {
@@ -3428,7 +3487,7 @@ class POSWidget(QWidget):
             pass
 
         if tiene_qr:
-            self.btn_mi_qr.setText("📱 Mi QR (🟢)")
+            self.btn_mi_qr.setText("Mi QR ✓")
             self.btn_mi_qr.setToolTip("Código QR activo y configurado. Clic para ver o cambiar.")
             self.btn_mi_qr.setFixedHeight(36)
             self.btn_mi_qr.setStyleSheet("""
@@ -3437,7 +3496,7 @@ class POSWidget(QWidget):
                     color: #15803d;
                     border: 2px solid #16a34a;
                     border-radius: 8px;
-                    padding: 4px 14px;
+                    padding: 4px 10px;
                     font-size: 13px;
                     font-weight: bold;
                 }
@@ -3447,7 +3506,7 @@ class POSWidget(QWidget):
                 }
             """)
         else:
-            self.btn_mi_qr.setText("📱 Subir QR (⚠️)")
+            self.btn_mi_qr.setText("Mi QR ⚠")
             self.btn_mi_qr.setToolTip("No has subido tu código QR personal para cobrar. Haz clic aquí para subirlo.")
             self.btn_mi_qr.setFixedHeight(36)
             self.btn_mi_qr.setStyleSheet("""
@@ -3456,7 +3515,7 @@ class POSWidget(QWidget):
                     color: #b45309;
                     border: 2px solid #f59e0b;
                     border-radius: 8px;
-                    padding: 4px 14px;
+                    padding: 4px 10px;
                     font-size: 13px;
                     font-weight: bold;
                 }
@@ -3623,6 +3682,27 @@ class POSWidget(QWidget):
         self._aplicar_responsive()
         self._reposicionar_watermark()
 
+    def _ancho_disponible(self) -> int:
+        """
+        Ancho real del contenedor visible.
+
+        El POS suele estar dentro de un ``QScrollArea`` con
+        ``widgetResizable=True``. En ese caso ``self.width()`` puede ser mayor
+        que el espacio visible (por el mínimo impuesto por el layout) y el
+        cálculo responsive nunca se activaría. Usar el viewport del padre
+        corrige el corte lateral en laptops con escalado de Windows.
+        """
+        padre = self.parentWidget()
+        if padre is not None:
+            abuelo = padre.parentWidget()
+            if abuelo is not None and abuelo.metaObject().className() == "QScrollArea":
+                ancho_vp = abuelo.viewport().width()
+                if ancho_vp > 0:
+                    return ancho_vp
+            if padre.width() > 0:
+                return padre.width()
+        return self.width()
+
     def _aplicar_responsive(self):
         """
         Adapta los elementos del POS al ancho disponible. En pantallas
@@ -3633,7 +3713,7 @@ class POSWidget(QWidget):
             return
         self._responsive_en_curso = True
         try:
-            ancho = self.width()
+            ancho = self._ancho_disponible()
 
             # Título: tamaño proporcional al espacio disponible.
             if hasattr(self, "_lbl_titulo_pos"):
@@ -3645,25 +3725,56 @@ class POSWidget(QWidget):
 
             # Atajos: se conservan los esenciales en anchos intermedios.
             chips = getattr(self, "_chips_atajos", [])
-            visibles = len(chips) if ancho >= 1150 else 3 if ancho >= 900 else 0
+            if ancho >= 1700:
+                visibles = len(chips)
+            elif ancho >= 1500:
+                visibles = 4
+            elif ancho >= 1350:
+                visibles = 2
+            elif ancho >= 1050:
+                visibles = 1
+            else:
+                visibles = 0
             for i, chip in enumerate(chips):
                 chip.setVisible(i < visibles)
 
             # Nombre del cajero: se oculta cuando el encabezado se comprime.
             if hasattr(self, "_lbl_cajero"):
-                self._lbl_cajero.setVisible(ancho >= 1050)
+                self._lbl_cajero.setVisible(ancho >= 1150)
 
-            # Panel de cobro: ancho adaptable.
+            # Panel de cobro: ancho adaptable y nunca mayor al 34 % visible.
             if hasattr(self, "_panel_derecho"):
-                nuevo = 320 if ancho >= 1300 else 300 if ancho >= 1100 else 280 if ancho >= 900 else 260
-                if self._panel_derecho.width() != nuevo:
+                if ancho >= 1400:
+                    nuevo = 320
+                elif ancho >= 1200:
+                    nuevo = 290
+                elif ancho >= 1000:
+                    nuevo = 270
+                else:
+                    nuevo = 250
+                nuevo = max(220, min(nuevo, int(ancho * 0.34)))
+                if self._panel_derecho.minimumWidth() != nuevo:
                     self._panel_derecho.setFixedWidth(nuevo)
         finally:
             self._responsive_en_curso = False
 
+    def _conectar_viewport(self):
+        """Filtra el resize del viewport del QScrollArea que contiene el POS."""
+        padre = self.parentWidget()
+        abuelo = padre.parentWidget() if padre is not None else None
+        if abuelo is not None and abuelo.metaObject().className() == "QScrollArea":
+            if getattr(self, "_viewport_padre", None) is not padre:
+                self._viewport_padre = padre
+                padre.installEventFilter(self)
+
     def showEvent(self, event):
         super().showEvent(event)
+        normalizar_botones(self)
+        self._conectar_viewport()
         self._aplicar_responsive()
+        # Reaplicar cuando el layout de la ventana principal ya está resuelto.
+        QTimer.singleShot(0, self._aplicar_responsive)
+        QTimer.singleShot(60, self._aplicar_responsive)
         QTimer.singleShot(10, self._reposicionar_watermark)
         QTimer.singleShot(80, self._reposicionar_watermark)
 
