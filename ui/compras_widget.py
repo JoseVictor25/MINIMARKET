@@ -260,9 +260,10 @@ class NuevaCompraDialog(QDialog):
         btn_cancel.setFixedWidth(100)
         btn_cancel.setCursor(Qt.PointingHandCursor)
         btn_cancel.clicked.connect(self.reject)
-        bottom.addWidget(btn_cancel, 1)
+        bottom.addWidget(btn_cancel)
 
-        btn_guardar = QPushButton("✓ Registrar Compra")
+        btn_guardar = QPushButton("Registrar")
+        btn_guardar.setToolTip("Registrar compra")
         btn_guardar.setObjectName("btn_success")
         btn_guardar.setFixedHeight(38)
         btn_guardar.setCursor(Qt.PointingHandCursor)
@@ -282,10 +283,11 @@ class NuevaCompraDialog(QDialog):
             }
         """)
         btn_guardar.clicked.connect(self._guardar)
-        bottom.addWidget(btn_guardar, 1)
+        bottom.addWidget(btn_guardar)
         root.addLayout(bottom)
         normalizar_botones(self)
-        igualar_fila(bottom, btn_cancel, btn_guardar, colores=("standard", "success"))
+        igualar_fila(bottom, btn_cancel, btn_guardar,
+                     colores=("standard", "success"), max_ancho=200)
 
     @staticmethod
     def _normalizar(texto: str) -> str:
@@ -717,7 +719,6 @@ class ComprasWidget(QWidget):
         self._compras_filtradas: list[Compra] = []
         self._build_ui()
         self._cargar_compras()
-        normalizar_botones(self)
 
     def actualizar(self):
         """Refresca el historial de compras conservando los filtros actuales."""
@@ -752,13 +753,15 @@ class ComprasWidget(QWidget):
 
         # ── 1. Barra de Título y Botones Principales ─────────────────────────
         top_bar = QHBoxLayout()
+        top_bar.addStretch()
         lbl_tit = QLabel("COMPRAS Y ABASTECIMIENTO")
         lbl_tit.setFont(QFont("Segoe UI", 15, QFont.Bold))
         lbl_tit.setStyleSheet("color: #ffffff; letter-spacing: 0.5px;")
         lay.addWidget(lbl_tit)
 
         # Botón Exportar Excel
-        self.btn_export_excel = QPushButton("📊 Exportar Excel")
+        self.btn_export_excel = QPushButton("Excel")
+        self.btn_export_excel.setToolTip("Exportar Excel")
         self.btn_export_excel.setFixedHeight(36)
         self.btn_export_excel.setCursor(Qt.PointingHandCursor)
         self.btn_export_excel.setStyleSheet("""
@@ -779,7 +782,8 @@ class ComprasWidget(QWidget):
         top_bar.addWidget(self.btn_export_excel)
 
         # Botón Exportar PDF
-        self.btn_export_pdf = QPushButton("📄 Exportar PDF")
+        self.btn_export_pdf = QPushButton("PDF")
+        self.btn_export_pdf.setToolTip("Exportar PDF")
         self.btn_export_pdf.setFixedHeight(36)
         self.btn_export_pdf.setCursor(Qt.PointingHandCursor)
         self.btn_export_pdf.setStyleSheet("""
@@ -800,7 +804,8 @@ class ComprasWidget(QWidget):
         top_bar.addWidget(self.btn_export_pdf)
 
         # Botón + Nueva Compra
-        self.btn_nueva = QPushButton("+ Nueva Compra")
+        self.btn_nueva = QPushButton("+ Compra")
+        self.btn_nueva.setToolTip("Registrar nueva compra")
         self.btn_nueva.setFixedHeight(36)
         self.btn_nueva.setCursor(Qt.PointingHandCursor)
         self.btn_nueva.setStyleSheet("""
@@ -943,7 +948,8 @@ class ComprasWidget(QWidget):
 
         # ── 5. Barra Inferior de Acciones ────────────────────────────────────
         bot_bar = QHBoxLayout()
-        self.btn_detalle = QPushButton("👁 Ver Detalle de Compra")
+        self.btn_detalle = QPushButton("Ver compra")
+        self.btn_detalle.setToolTip("Ver detalle de compra")
         self.btn_detalle.setFixedHeight(34)
         self.btn_detalle.setCursor(Qt.PointingHandCursor)
         self.btn_detalle.setStyleSheet("""
@@ -968,6 +974,10 @@ class ComprasWidget(QWidget):
         self.lbl_conteo.setStyleSheet("color: #94a3b8; font-size: 12px; font-weight: 500;")
         bot_bar.addWidget(self.lbl_conteo)
         lay.addLayout(bot_bar)
+        normalizar_botones(self)
+        igualar_fila(top_bar, self.btn_export_excel, self.btn_export_pdf,
+                     self.btn_nueva, tipo="standard", max_ancho=180)
+        igualar_fila(bot_bar, self.btn_detalle, tipo="standard", max_ancho=180)
 
         # Inicializar visibilidad de controles de filtro
         self._on_periodo_cambiado()
