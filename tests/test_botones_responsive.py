@@ -3,6 +3,10 @@ import os
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
+from contextlib import contextmanager
+import importlib
+
+import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -82,5 +86,53 @@ def test_inventario_cabe_en_ancho_logico_reducido(tmp_path):
             assert esquina.x() + boton.width() <= inventario.width()
     inventario.close()
     inventario.session.close()
+    engine.dispose()
+    app.setStyleSheet(estilo_anterior)
+
+
+@pytest.mark.parametrize("modulo,clase", [
+    ("productos_widget", "ProductosWidget"),
+    ("compras_widget", "ComprasWidget"),
+    ("ventas_widget", "VentasWidget"),
+    ("reportes_widget", "ReportesWidget"),
+    ("caja_widget", "CajaWidget"),
+    ("usuarios_widget", "UsuariosWidget"),
+    ("maestros_widget", "MaestrosWidget"),
+    ("pos_widget", "POSWidget"),
+])
+def test_paneles_caben_en_1000_logicos(tmp_path, modulo, clase):
+    app = QApplication.instance() or QApplication([])
+    estilo_anterior = app.styleSheet()
+    app.setStyleSheet(STYLESHEET)
+    engine = create_engine(f"sqlite:///{tmp_path / 'pruebas.db'}")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+
+    @contextmanager
+    def sesion_temporal():
+        with Session() as sesion:
+            yield sesion
+
+    m = importlib.import_module(f"ui.{modulo}")
+    usuario = SimpleNamespace(id=1, username="prueba", nombre_completo="Usuario de prueba",
+                              rol="admin", es_admin=lambda: True,
+                              es_cajero=lambda: True)
+    with patch.object(m, "SessionLocal", Session), \
+         patch.object(m, "get_session", sesion_temporal, create=True):
+        panel = getattr(m, clase)(usuario) if clase != "MaestrosWidget" else getattr(m, clase)()
+        panel.resize(1000, 700)
+        panel.show()
+        app.processEvents()
+        assert panel.width() <= 1000, f"{clase}: ancho mínimo {panel.width()}"
+        for boton in panel.findChildren(QPushButton):
+            if boton.isVisibleTo(panel):
+                izquierda = boton.mapTo(panel, boton.rect().topLeft()).x()
+                assert izquierda >= 0, f"{clase}: {boton.text()} fuera a la izquierda"
+                assert izquierda + boton.width() <= panel.width(), (
+                    f"{clase}: {boton.text()} fuera a la derecha"
+                )
+        panel.close()
+        if hasattr(panel, "session"):
+            panel.session.close()
     engine.dispose()
     app.setStyleSheet(estilo_anterior)

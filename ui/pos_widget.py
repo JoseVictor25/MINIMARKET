@@ -2186,6 +2186,7 @@ class POSWidget(QWidget):
 
         center_canvas = QFrame()
         center_canvas.setObjectName("pos_center_canvas")
+        center_canvas.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
         center_canvas.setStyleSheet(f"""
             QFrame#pos_center_canvas {{
                 background-color: {bg_pos};
@@ -2412,6 +2413,7 @@ class POSWidget(QWidget):
 
         # Tabla de Carrito de Compras en el lienzo central
         self.tabla = QTableWidget(0, 8)
+        self.tabla.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
         headers = ["#", "Código", "Descripción", "UM", "Cantidad", f"P. Unit. ({CURRENCY})", f"Subtotal ({CURRENCY})", "Acción"]
         self.tabla.setHorizontalHeaderLabels(headers)
         self.tabla.horizontalHeader().setSectionResizeMode(COL_DESCRIPCION, QHeaderView.Stretch)
@@ -2668,7 +2670,7 @@ class POSWidget(QWidget):
         self.lbl_uv_info.setStyleSheet("color: #94a3b8; font-size: 14px; background: transparent; border: none;")
         uv_lay.addWidget(self.lbl_uv_info)
 
-        self.btn_reimprimir_ticket = QPushButton("🖨️  Reimprimir Ticket")
+        self.btn_reimprimir_ticket = QPushButton("🖨 Reimprimir")
         self.btn_reimprimir_ticket.setFixedHeight(34)
         self.btn_reimprimir_ticket.setCursor(Qt.PointingHandCursor)
         self.btn_reimprimir_ticket.setStyleSheet("""
@@ -2778,7 +2780,8 @@ class POSWidget(QWidget):
         acc_lay.addWidget(self.btn_cobrar)
 
         # Botón Cancelar Venta
-        btn_cancelar = QPushButton("X  Cancelar Venta  (Esc)")
+        btn_cancelar = QPushButton("Cancelar venta")
+        btn_cancelar.setToolTip("Cancelar venta (Esc)")
         btn_cancelar.setFixedHeight(40)
         btn_cancelar.setCursor(Qt.PointingHandCursor)
         btn_cancelar.setStyleSheet("""
@@ -2802,6 +2805,13 @@ class POSWidget(QWidget):
 
         right_lay.addWidget(acciones_card)
 
+        for card in right.findChildren(QFrame):
+            if card.parentWidget() is right:
+                card.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        for etiqueta in right.findChildren(QLabel):
+            etiqueta.setWordWrap(True)
+        self.input_nit.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.lista_resumen.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         root.addWidget(right, 0)
 
     def _setup_shortcuts(self):
@@ -3296,7 +3306,7 @@ class POSWidget(QWidget):
         else:
             self.lbl_items_count.setText(f"{n} producto(s)  ·  {unidades:.0f} unid.")
             self.btn_cobrar.setEnabled(True)
-            self.btn_cobrar.setText(f"COBRAR — {CURRENCY} {total:.2f}")
+            self.btn_cobrar.setText("COBRAR")
 
         # Actualizar mini-resumen lateral
         self.lista_resumen.clear()
@@ -3722,6 +3732,9 @@ class POSWidget(QWidget):
         self._responsive_en_curso = True
         try:
             ancho = self._ancho_disponible()
+            if hasattr(self, "tabla"):
+                self.tabla.setColumnHidden(COL_UM, ancho < 1100)
+                self.tabla.setColumnHidden(COL_CODIGO, ancho < 1100)
 
             # Título: tamaño proporcional al espacio disponible.
             if hasattr(self, "_lbl_titulo_pos"):
