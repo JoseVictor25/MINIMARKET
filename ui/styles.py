@@ -38,9 +38,9 @@ PALETTE = {
 # Métricas únicas para botones. Los colores elegidos mantienen contraste AA
 # con texto blanco incluso en hover, pulsado y deshabilitado.
 BUTTON_METRICS = {
-    "standard": (40, 14, 16, 96),
-    "primary": (46, 16, 16, 120),
-    "compact": (32, 13, 10, 88),
+    "standard": (34, 13, 16, 96),
+    "primary": (40, 15, 16, 120),
+    "compact": (28, 13, 10, 88),
 }
 BUTTON_COLORS = {
     "standard": ("#334155", "#1e293b", "#0f172a"),
@@ -76,13 +76,25 @@ def configurar_boton(boton: QPushButton, tipo: str = "standard", color: str | No
                               boton.fontMetrics().horizontalAdvance(boton.text())
                               + 2 * padding + (boton.iconSize().width() + 6 if not boton.icon().isNull() else 0)))
     boton.setFixedHeight(alto)
-    boton.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+    boton.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
 
 
 def normalizar_botones(contenedor):
-    """Clasifica botones iniciales y los creados al refrescar tablas."""
+    """Clasifica botones iniciales y los creados al refrescar tablas.
+
+    Respeta el estilo propio del botón cuando tiene la propiedad
+    ``estilo_boton="ignorar"`` o cuando ya tiene un stylesheet personalizado
+    no vacío establecido directamente sobre él (distintos de los que este
+    normalizador generaría).  Eso permite que botones con colores propios
+    (ojo de contraseña, +/−, cobrar, etc.) no queden aplanados a gris.
+    """
     for boton in contenedor.findChildren(QPushButton):
-        if boton.property("estilo_boton") == "ignorar":
+        prop = boton.property("estilo_boton")
+        if prop == "ignorar":
+            continue
+        # Botones con stylesheet propio no vacío y sin prop que indique
+        # que el normalizador debe procesarlos también se saltan.
+        if boton.styleSheet().strip() and prop not in ("compact", "primary", "standard"):
             continue
         texto = boton.text().casefold()
         ancestro = boton.parentWidget()
@@ -92,8 +104,8 @@ def normalizar_botones(contenedor):
                 en_tabla = True
                 break
             ancestro = ancestro.parentWidget()
-        tipo = "compact" if en_tabla or boton.property("estilo_boton") == "compact" else (
-            "primary" if boton.property("estilo_boton") == "primary" or
+        tipo = "compact" if en_tabla or prop == "compact" else (
+            "primary" if prop == "primary" or
             boton.objectName() in ("btn_primary", "btn_success") or
             any(palabra in texto for palabra in ("guardar", "registrar", "cobrar", "confirmar", "aceptar"))
             else "standard"
@@ -107,38 +119,50 @@ def normalizar_botones(contenedor):
             return
         if isinstance(layout, QHBoxLayout):
             widgets = [layout.itemAt(i).widget() for i in range(layout.count())]
-            if len(widgets) >= 2 and all(isinstance(w, QPushButton) for w in widgets):
+            # Solo iguala filas donde todos los botones no tienen estilos propios
+            elegibles = [
+                w for w in widgets
+                if isinstance(w, QPushButton)
+                and w.property("estilo_boton") != "ignorar"
+                and (not w.styleSheet().strip() or
+                     w.property("estilo_boton") in ("compact", "primary", "standard"))
+            ]
+            if len(elegibles) >= 2 and len(elegibles) == len([w for w in widgets if w is not None]):
                 principal = any(
                     any(p in w.text().casefold() for p in
                         ("guardar", "registrar", "cobrar", "confirmar", "aceptar"))
-                    for w in widgets
+                    for w in elegibles
                 )
                 colores = tuple(
                     "danger" if any(p in w.text().casefold() for p in
                         ("quitar", "eliminar", "anular", "cerrar caja", "confirmar cierre"))
                     else "success" if principal and any(p in w.text().casefold() for p in
                         ("guardar", "registrar", "cobrar", "confirmar", "aceptar"))
-                    else "standard" for w in widgets
+                    else "standard" for w in elegibles
                 )
-                igualar_fila(layout, *widgets, tipo="primary" if principal else "standard",
+                igualar_fila(layout, *elegibles, tipo="primary" if principal else "standard",
                              colores=colores)
         for i in range(layout.count()):
             visitar(layout.itemAt(i).layout())
     visitar(contenedor.layout())
 
 
-def igualar_fila(layout, *botones: QPushButton, tipo: str = "primary", colores=None):
-    """Da a los botones de una fila igual altura, ancho mínimo y expansión."""
+def igualar_fila(layout, *botones: QPushButton, tipo: str = "primary", colores=None,
+                 max_ancho: int | None = None):
+    """Da a los botones de una fila igual altura y ancho mínimo.
+
+    Los botones comparten el mismo ancho mínimo (el mayor del grupo) pero NO
+    se expanden a lo ancho de la fila (stretch=0).  Pasa ``max_ancho`` para
+    fijar un tope visual (p. ej. 180 px en barras de acciones laterales).
+    """
     colores = colores or (None,) * len(botones)
     for boton, color in zip(botones, colores):
         configurar_boton(boton, tipo, color)
     ancho = max(boton.minimumWidth() for boton in botones)
     for boton in botones:
         boton.setMinimumWidth(ancho)
-        for indice in range(layout.count()):
-            if layout.itemAt(indice).widget() is boton:
-                layout.setStretch(indice, 1)
-                break
+        if max_ancho is not None:
+            boton.setMaximumWidth(max_ancho)
 
 STYLESHEET = f"""
 QMainWindow, QDialog, QWidget {{
