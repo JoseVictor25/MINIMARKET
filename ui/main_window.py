@@ -20,7 +20,7 @@ from models.usuario import Usuario
 from services.ticket_service import respaldar_base_de_datos
 from services.inventario_service import productos_con_stock_bajo, contar_productos_stock_bajo
 from database import SessionLocal
-from ui.styles import PALETTE
+from ui.styles import PALETTE, normalizar_botones, igualar_fila
 
 # Widgets de cada sección
 from ui.pos_widget       import POSWidget
@@ -66,6 +66,7 @@ class CerrarSesionDialog(QDialog):
         self.setFixedWidth(460)
         self.setModal(True)
         self._build_ui()
+        normalizar_botones(self)
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -200,7 +201,6 @@ class CerrarSesionDialog(QDialog):
         footer_lay = QHBoxLayout(footer)
         footer_lay.setContentsMargins(24, 16, 24, 16)
         footer_lay.setSpacing(14)
-        footer_lay.addStretch()
 
         btn_cancel = QPushButton("Cancelar")
         btn_cancel.setCursor(Qt.PointingHandCursor)
@@ -227,7 +227,7 @@ class CerrarSesionDialog(QDialog):
             }
         """)
         btn_cancel.clicked.connect(self.reject)
-        footer_lay.addWidget(btn_cancel, 0, Qt.AlignVCenter)
+        footer_lay.addWidget(btn_cancel, 1, Qt.AlignVCenter)
 
         btn_confirm = QPushButton(" Cerrar Sesión")
         btn_confirm.setCursor(Qt.PointingHandCursor)
@@ -256,9 +256,11 @@ class CerrarSesionDialog(QDialog):
             }
         """)
         btn_confirm.clicked.connect(self.accept)
-        footer_lay.addWidget(btn_confirm, 0, Qt.AlignVCenter)
+        footer_lay.addWidget(btn_confirm, 1, Qt.AlignVCenter)
 
         root.addWidget(footer)
+        igualar_fila(footer_lay, btn_cancel, btn_confirm,
+                     colores=("standard", "danger"))
 
 
 class MainWindow(QMainWindow):
@@ -270,6 +272,7 @@ class MainWindow(QMainWindow):
         self._widgets: dict[str, QWidget] = {}
         self._ancho_sidebar = 220
         self._build_ui()
+        normalizar_botones(self.sidebar_container)
         self._iniciar_alertas_timer()
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
 
