@@ -384,7 +384,12 @@ class MainWindow(QMainWindow):
         sep2.setStyleSheet(f"background: {PALETTE['border']}; border: none;")
         sidebar_lay.addWidget(sep2)
 
-        # Botones inferiores
+        # Contenedor inferior para Cerrar Sesión (y Respaldar BD si es admin) con separación segura del borde
+        bottom_box = QFrame()
+        bottom_lay = QVBoxLayout(bottom_box)
+        bottom_lay.setContentsMargins(12, 8, 12, 14)
+        bottom_lay.setSpacing(6)
+
         if es_admin:
             btn_respaldo = QPushButton("💾  Respaldar BD")
             btn_respaldo.clicked.connect(self._respaldar)
@@ -402,13 +407,8 @@ class MainWindow(QMainWindow):
                     color: {PALETTE['text_primary']};
                 }}
             """)
-            sidebar_lay.addWidget(btn_respaldo)
-
-        # Contenedor inferior para Cerrar Sesión con separación segura del borde
-        bottom_box = QFrame()
-        bottom_lay = QVBoxLayout(bottom_box)
-        bottom_lay.setContentsMargins(12, 8, 12, 14)
-        bottom_lay.setSpacing(6)
+            btn_respaldo.setProperty("estilo_boton", "ignorar")
+            bottom_lay.addWidget(btn_respaldo)
 
         btn_salir = QPushButton("🚪  Cerrar Sesión")
         btn_salir.setCursor(Qt.PointingHandCursor)
