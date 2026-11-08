@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QComboBox,
     QDateEdit, QFrame, QMessageBox, QTextEdit,
-    QScrollArea, QWidget, QStyledItemDelegate,
+    QScrollArea, QWidget, QStyledItemDelegate, QApplication,
 )
 from PyQt5.QtGui import QFont, QDoubleValidator
 
@@ -865,12 +865,28 @@ class CierreCajaDialog(QDialog):
         self.cierre_completado = False
 
         self.setWindowTitle("Control y Arqueo de Caja – Cierre de Turno")
-        self.setMinimumSize(660, 720)
-        self.resize(680, 760)
+        # El contenido principal va dentro de un scroll; el diálogo puede ser
+        # más bajo sin que se recorte el botón de confirmación.
+        self.setMinimumSize(620, 560)
+        self.resize(680, 720)
         self.setModal(True)
         self._cargar_datos()
         self._build_ui()
         self._actualizar_arqueo()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        try:
+            pantalla = self.screen() or QApplication.primaryScreen()
+            disp = pantalla.availableGeometry()
+            ancho = min(max(self.width(), self.minimumWidth()), int(disp.width() * 0.94))
+            alto = min(max(self.height(), self.minimumHeight()), int(disp.height() * 0.94))
+            self.resize(ancho, alto)
+            x = disp.x() + (disp.width() - ancho) // 2
+            y = disp.y() + (disp.height() - alto) // 2
+            self.move(max(disp.x(), x), max(disp.y(), y))
+        except Exception:
+            pass
 
     def _cargar_datos(self):
         with get_session() as session:
@@ -1135,10 +1151,11 @@ class CierreCajaDialog(QDialog):
 
         # ── 4. Botonera Inferior Fija (Siempre visible) ────────────────────────
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(12)
+        btn_row.setSpacing(10)
 
         self.btn_imprimir = QPushButton("📄  Ticket de Arqueo")
         self.btn_imprimir.setFixedHeight(46)
+        self.btn_imprimir.setMinimumWidth(130)
         self.btn_imprimir.setCursor(Qt.PointingHandCursor)
         self.btn_imprimir.setStyleSheet(f"""
             QPushButton {{
@@ -1156,19 +1173,19 @@ class CierreCajaDialog(QDialog):
             }}
         """)
         self.btn_imprimir.clicked.connect(self._imprimir_arqueo)
-        btn_row.addWidget(self.btn_imprimir)
+        btn_row.addWidget(self.btn_imprimir, 1)
 
         self.btn_imprimir_directo = QPushButton("🖨  Imprimir Arqueo")
         self.btn_imprimir_directo.setFixedHeight(46)
+        self.btn_imprimir_directo.setMinimumWidth(130)
         self.btn_imprimir_directo.setCursor(Qt.PointingHandCursor)
         self.btn_imprimir_directo.setStyleSheet(self.btn_imprimir.styleSheet())
         self.btn_imprimir_directo.clicked.connect(self._imprimir_arqueo_directo)
-        btn_row.addWidget(self.btn_imprimir_directo)
-
-        btn_row.addStretch()
+        btn_row.addWidget(self.btn_imprimir_directo, 1)
 
         self.btn_cancelar = QPushButton("Cancelar")
         self.btn_cancelar.setFixedHeight(46)
+        self.btn_cancelar.setMinimumWidth(100)
         self.btn_cancelar.setCursor(Qt.PointingHandCursor)
         self.btn_cancelar.setStyleSheet(f"""
             QPushButton {{
@@ -1186,10 +1203,11 @@ class CierreCajaDialog(QDialog):
             }}
         """)
         self.btn_cancelar.clicked.connect(self.reject)
-        btn_row.addWidget(self.btn_cancelar)
+        btn_row.addWidget(self.btn_cancelar, 1)
 
-        self.btn_cerrar = QPushButton("🔒  Confirmar Cierre de Caja")
+        self.btn_cerrar = QPushButton("Confirmar cierre")
         self.btn_cerrar.setFixedHeight(46)
+        self.btn_cerrar.setMinimumWidth(135)
         self.btn_cerrar.setCursor(Qt.PointingHandCursor)
         self.btn_cerrar.setStyleSheet("""
             QPushButton {
@@ -1209,8 +1227,7 @@ class CierreCajaDialog(QDialog):
             }
         """)
         self.btn_cerrar.clicked.connect(self._confirmar_cierre)
-        btn_row.addWidget(self.btn_cerrar)
-
+        btn_row.addWidget(self.btn_cerrar, 1)
         root.addLayout(btn_row)
 
     def _actualizar_arqueo(self):
