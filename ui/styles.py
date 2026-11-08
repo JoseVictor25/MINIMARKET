@@ -632,7 +632,7 @@ QDateEdit:focus {{
 QDateEdit::drop-down {{
     subcontrol-origin: padding;
     subcontrol-position: top right;
-    width: 26px;
+    width: 28px;
     border-left: 1px solid {PALETTE['border']};
     border-top-right-radius: 7px;
     border-bottom-right-radius: 7px;
@@ -642,12 +642,11 @@ QDateEdit::drop-down:hover {{
     background-color: {PALETTE['bg_hover']};
 }}
 QDateEdit::down-arrow {{
-    image: none;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-top: 5px solid {PALETTE['accent']};
-    width: 0;
-    height: 0;
+    image: url(assets/combo_arrow.png);
+    border: none;
+    background: transparent;
+    width: 12px;
+    height: 12px;
 }}
 
 /* QCalendarWidget */

@@ -142,7 +142,7 @@ class AperturaCajaDialog(_BotonesCaja, QDialog):
                 border: 2px solid #0ea5e9;
                 background: #131c2a;
             }
-            QComboBox::drop-down, QDateEdit::drop-down {
+            QComboBox::drop-down {
                 subcontrol-origin: padding;
                 subcontrol-position: top right;
                 width: 28px;
@@ -151,7 +151,7 @@ class AperturaCajaDialog(_BotonesCaja, QDialog):
                 border-bottom-right-radius: 7px;
                 background-color: #101722;
             }
-            QComboBox::down-arrow, QDateEdit::down-arrow {
+            QComboBox::down-arrow {
                 image: url(assets/combo_arrow.png);
                 width: 12px;
                 height: 12px;
