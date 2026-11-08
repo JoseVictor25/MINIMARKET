@@ -40,7 +40,7 @@ from services.qr_service import generar_pixmap_qr_dinamico, generar_qr_pil
 from ui.caja_dialog import AperturaCajaDialog, CierreCajaDialog
 from ui.qr_dialog import GestionQRDialog, VisualizadorImagenDialog
 from config import CURRENCY, APP_NAME, QR_DIR
-from ui.styles import PALETTE, normalizar_botones
+from ui.styles import PALETTE, normalizar_botones, configurar_boton
 from services.barcode_service import normalizar_codigo_barras
 
 
@@ -1259,7 +1259,7 @@ class CobrarDialog(QDialog):
         self.metodo_pago = metodo
         for m, btn in self._btn_pago.items():
             btn.setChecked(m == metodo)
-            btn.setStyleSheet(self._estilo_btn_pago(m == metodo))
+            configurar_boton(btn, "standard", "primary" if m == metodo else "standard")
 
         es_efectivo    = (metodo == "efectivo")
         es_qr          = (metodo == "QR")
@@ -3411,6 +3411,7 @@ class POSWidget(QWidget):
                 }
             """)
             self.btn_caja_accion.show()
+
         else:
             self.badge_caja.setText("Caja Cerrada")
             self.badge_caja.setToolTip("No hay una sesión de caja abierta para este usuario.")
@@ -3443,6 +3444,9 @@ class POSWidget(QWidget):
                 }
             """)
             self.btn_caja_accion.show()
+
+        configurar_boton(self.btn_caja_accion, "standard",
+                         "danger" if self._caja_activa_id else "standard")
 
     def _gestionar_caja(self):
         # Disponible para cajeros, admins y usuarios con doble rol (admin+cajero)
@@ -3505,6 +3509,7 @@ class POSWidget(QWidget):
                     border-color: #15803d;
                 }
             """)
+
         else:
             self.btn_mi_qr.setText("Mi QR ⚠")
             self.btn_mi_qr.setToolTip("No has subido tu código QR personal para cobrar. Haz clic aquí para subirlo.")
@@ -3524,6 +3529,9 @@ class POSWidget(QWidget):
                     border-color: #d97706;
                 }
             """)
+
+        configurar_boton(self.btn_mi_qr, "standard",
+                         "success" if tiene_qr else "warning")
 
     def _abrir_gestion_qr(self):
         """Abre el diálogo modal de gestión del código QR del cajero actual."""
