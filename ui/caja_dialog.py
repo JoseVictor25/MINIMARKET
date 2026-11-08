@@ -200,6 +200,7 @@ class AperturaCajaDialog(_BotonesCaja, QDialog):
 
         # Fila 3: Inputs de Fecha y Monto
         self.date_apertura = QDateEdit()
+        self.date_apertura.setFixedWidth(150)
         self.date_apertura.setFixedHeight(40)
         self.date_apertura.setCalendarPopup(True)
         self.date_apertura.setDate(QDate.currentDate())

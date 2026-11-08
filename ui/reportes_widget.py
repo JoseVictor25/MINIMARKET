@@ -173,8 +173,10 @@ class ReportesWidget(QWidget):
         f_lay.addLayout(rapidos)
 
         # Selectores de Fechas
+        fechas.setSpacing(10)
         fechas.addWidget(QLabel("Desde:"))
         self.date_desde = QDateEdit()
+        self.date_desde.setFixedWidth(150)
         self.date_desde.setCalendarPopup(True)
         self.date_desde.setDisplayFormat("dd/MM/yyyy")
         configurar_calendario_elegante(self.date_desde)
@@ -182,10 +184,12 @@ class ReportesWidget(QWidget):
 
         fechas.addWidget(QLabel("Hasta:"))
         self.date_hasta = QDateEdit()
+        self.date_hasta.setFixedWidth(150)
         self.date_hasta.setCalendarPopup(True)
         self.date_hasta.setDisplayFormat("dd/MM/yyyy")
         configurar_calendario_elegante(self.date_hasta)
         fechas.addWidget(self.date_hasta)
+        fechas.addStretch()
 
         # Selector de Cajero
         f_lay.addLayout(fechas)
@@ -193,9 +197,10 @@ class ReportesWidget(QWidget):
         cajero_lay.setSpacing(10)
         cajero_lay.addWidget(QLabel("Cajero:"))
         self.combo_cajero = QComboBox()
+        self.combo_cajero.setFixedWidth(240)
         self.combo_cajero.addItem("👤 Todos los Cajeros", None)
         self._cargar_combo_cajeros()
-        cajero_lay.addWidget(self.combo_cajero, 1)
+        cajero_lay.addWidget(self.combo_cajero)
 
         btn_filtrar = QPushButton("🔎 Filtrar")
         btn_filtrar.setStyleSheet(f"""
@@ -212,6 +217,7 @@ class ReportesWidget(QWidget):
         """)
         btn_filtrar.clicked.connect(self.actualizar)
         cajero_lay.addWidget(btn_filtrar)
+        cajero_lay.addStretch()
 
         f_lay.addLayout(cajero_lay)
         root.addWidget(filtros_card)

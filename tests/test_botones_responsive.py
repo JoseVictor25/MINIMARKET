@@ -94,6 +94,37 @@ def test_productos_y_registrar_compra_no_estiran_botones(tmp_path):
     engine.dispose()
 
 
+def test_fechas_de_reportes_permanecen_juntas(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    engine = create_engine(f"sqlite:///{tmp_path / 'reportes.db'}")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+
+    @contextmanager
+    def sesion_temporal():
+        with Session() as sesion:
+            yield sesion
+
+    from ui.reportes_widget import ReportesWidget
+    usuario = SimpleNamespace(id=1, es_admin=lambda: True)
+    with patch("ui.reportes_widget.SessionLocal", Session), \
+         patch("ui.reportes_widget.get_session", sesion_temporal):
+        panel = ReportesWidget(usuario)
+        panel.resize(1000, 700)
+        panel.show()
+        app.processEvents()
+        desde = panel.date_desde
+        hasta = panel.date_hasta
+        assert desde.width() == hasta.width() == 150
+        distancia = hasta.mapTo(panel, hasta.rect().topLeft()).x() - (
+            desde.mapTo(panel, desde.rect().topLeft()).x() + desde.width()
+        )
+        assert distancia < 100
+        assert panel.combo_cajero.width() == 240
+        panel.close()
+    engine.dispose()
+
+
 def test_inventario_cabe_en_ancho_logico_reducido(tmp_path):
     app = QApplication.instance() or QApplication([])
     estilo_anterior = app.styleSheet()
