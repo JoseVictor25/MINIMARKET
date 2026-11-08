@@ -12,7 +12,7 @@ from decimal import Decimal
 from PyQt5.QtCore import Qt, QDate, QEvent, QStringListModel, pyqtSignal
 from PyQt5.QtGui import QFont, QColor
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
     QLineEdit, QPushButton, QTableWidget, QTableWidgetItem,
     QHeaderView, QDialog, QFormLayout, QComboBox,
     QDoubleSpinBox, QMessageBox, QAbstractItemView,
@@ -755,8 +755,7 @@ class ComprasWidget(QWidget):
         lbl_tit = QLabel("COMPRAS Y ABASTECIMIENTO")
         lbl_tit.setFont(QFont("Segoe UI", 15, QFont.Bold))
         lbl_tit.setStyleSheet("color: #ffffff; letter-spacing: 0.5px;")
-        top_bar.addWidget(lbl_tit)
-        top_bar.addStretch()
+        lay.addWidget(lbl_tit)
 
         # Botón Exportar Excel
         self.btn_export_excel = QPushButton("📊 Exportar Excel")
@@ -824,29 +823,31 @@ class ComprasWidget(QWidget):
         lay.addLayout(top_bar)
 
         # ── 2. Tarjetas Resumen (KPIs) ───────────────────────────────────────
-        kpis_lay = QHBoxLayout()
+        kpis_lay = QGridLayout()
         kpis_lay.setSpacing(14)
 
         card1, self.lbl_kpi_total, self.lbl_kpi_total_sub = _crear_kpi_card("Total Invertido en Compras", f"{CURRENCY} 0.00", "#10b981", "En el período seleccionado")
         card2, self.lbl_kpi_cant, self.lbl_kpi_cant_sub = _crear_kpi_card("Facturas / Compras", "0", "#38bdf8", "Transacciones registradas")
         card3, self.lbl_kpi_provs, self.lbl_kpi_provs_sub = _crear_kpi_card("Proveedores Atendidos", "0", "#a855f7", "Diferentes proveedores")
 
-        kpis_lay.addWidget(card1)
-        kpis_lay.addWidget(card2)
-        kpis_lay.addWidget(card3)
+        kpis_lay.addWidget(card1, 0, 0)
+        kpis_lay.addWidget(card2, 0, 1)
+        kpis_lay.addWidget(card3, 1, 0, 1, 2)
         lay.addLayout(kpis_lay)
 
         # ── 3. Barra de Filtros (Día, Mes, Año, Búsqueda) ────────────────────
         filter_frame = QFrame()
         filter_frame.setObjectName("card")
         filter_frame.setStyleSheet("background-color: #1e293b; border: 1px solid #334155; border-radius: 8px;")
-        filter_lay = QHBoxLayout(filter_frame)
+        filter_lay = QVBoxLayout(filter_frame)
         filter_lay.setContentsMargins(14, 10, 14, 10)
         filter_lay.setSpacing(10)
+        periodo_lay = QHBoxLayout()
+        busqueda_lay = QHBoxLayout()
 
         lbl_filtro = QLabel("Filtrar por:")
         lbl_filtro.setStyleSheet("font-weight: bold; color: #e2e8f0; font-size: 13px;")
-        filter_lay.addWidget(lbl_filtro)
+        periodo_lay.addWidget(lbl_filtro)
 
         self.combo_periodo = QComboBox()
         self.combo_periodo.setFixedHeight(34)
@@ -858,7 +859,7 @@ class ComprasWidget(QWidget):
             "Por Año",
         ])
         self.combo_periodo.currentIndexChanged.connect(self._on_periodo_cambiado)
-        filter_lay.addWidget(self.combo_periodo)
+        periodo_lay.addWidget(self.combo_periodo)
 
         # Date Picker para Día o Hoy
         self.date_picker = QDateEdit()
@@ -869,7 +870,7 @@ class ComprasWidget(QWidget):
         self.date_picker.setDisplayFormat("dd/MM/yyyy")
         configurar_calendario_elegante(self.date_picker)
         self.date_picker.dateChanged.connect(lambda: self._cargar_compras())
-        filter_lay.addWidget(self.date_picker)
+        periodo_lay.addWidget(self.date_picker)
 
         # Selector de Mes
         self.combo_mes = QComboBox()
@@ -879,7 +880,7 @@ class ComprasWidget(QWidget):
         self.combo_mes.addItems(meses)
         self.combo_mes.setCurrentIndex(datetime.now().month - 1)
         self.combo_mes.currentIndexChanged.connect(lambda: self._cargar_compras())
-        filter_lay.addWidget(self.combo_mes)
+        periodo_lay.addWidget(self.combo_mes)
 
         # Selector de Año
         self.combo_anio = QComboBox()
@@ -889,7 +890,7 @@ class ComprasWidget(QWidget):
             self.combo_anio.addItem(str(y))
         self.combo_anio.setCurrentText(str(current_year))
         self.combo_anio.currentIndexChanged.connect(lambda: self._cargar_compras())
-        filter_lay.addWidget(self.combo_anio)
+        periodo_lay.addWidget(self.combo_anio)
 
         # Filtro por proveedor
         self.combo_prov_filtro = QComboBox()
@@ -902,9 +903,7 @@ class ComprasWidget(QWidget):
         except Exception:
             pass
         self.combo_prov_filtro.currentIndexChanged.connect(lambda: self._cargar_compras())
-        filter_lay.addWidget(self.combo_prov_filtro)
-
-        filter_lay.addStretch()
+        busqueda_lay.addWidget(self.combo_prov_filtro, 1)
 
         # Búsqueda rápida por texto
         self.input_buscar = QLineEdit()
@@ -912,7 +911,9 @@ class ComprasWidget(QWidget):
         self.input_buscar.setFixedWidth(270)
         self.input_buscar.setPlaceholderText("🔍 Buscar factura, proveedor, usuario...")
         self.input_buscar.textChanged.connect(lambda: self._cargar_compras())
-        filter_lay.addWidget(self.input_buscar)
+        busqueda_lay.addWidget(self.input_buscar, 2)
+        filter_lay.addLayout(periodo_lay)
+        filter_lay.addLayout(busqueda_lay)
 
         lay.addWidget(filter_frame)
 
