@@ -243,7 +243,7 @@ class LoginDialog(QDialog):
         pass_layout.addStretch()
 
         self.btn_toggle_pass = QPushButton()
-        self.btn_toggle_pass.setProperty("estilo_boton", "compact")
+        self.btn_toggle_pass.setProperty("estilo_boton", "ignorar")
         self.btn_toggle_pass.setFocusPolicy(Qt.NoFocus)
         self.btn_toggle_pass.setCursor(Qt.PointingHandCursor)
         self.btn_toggle_pass.setFixedSize(30, 30)
