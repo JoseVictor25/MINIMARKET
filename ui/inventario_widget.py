@@ -25,7 +25,7 @@ from PyQt5.QtWidgets import (
     QHeaderView, QDialog, QFormLayout, QComboBox,
     QDoubleSpinBox, QMessageBox, QAbstractItemView,
     QFrame, QTabWidget, QGridLayout, QScrollArea,
-    QFileDialog,
+    QFileDialog, QSizePolicy,
 )
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
@@ -263,6 +263,7 @@ class InventarioWidget(QWidget):
 
         lbl_sub = QLabel("Control de existencias físicas, cálculo de ganancias proyectadas y alertas de reposición")
         lbl_sub.setObjectName("label_small")
+        lbl_sub.setWordWrap(True)
         titulos_box.addWidget(lbl_sub)
         hdr.addLayout(titulos_box)
 
@@ -280,6 +281,8 @@ class InventarioWidget(QWidget):
 
         self.combo_reporte = QComboBox()
         self.combo_reporte.setMinimumWidth(185)
+        self.combo_reporte.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_reporte.setMinimumContentsLength(12)
         self.combo_reporte.setToolTip("Elija qué reporte desea exportar en PDF o Excel")
         self.combo_reporte.addItem("📦 Inventario completo", "inventario")
         self.combo_reporte.addItem("⚠️ Productos con stock bajo", "stock_bajo")
@@ -299,7 +302,7 @@ class InventarioWidget(QWidget):
         btn_exp_xlsx.clicked.connect(self._exportar_reporte_excel)
         acciones_top.addWidget(btn_exp_xlsx, 1)
 
-        btn_ajuste = QPushButton("+ Nuevo Ajuste de Stock")
+        btn_ajuste = QPushButton("+ Ajustar stock")
         btn_ajuste.setObjectName("btn_primary")
         btn_ajuste.setCursor(Qt.PointingHandCursor)
         btn_ajuste.clicked.connect(self._nuevo_ajuste)
@@ -314,7 +317,7 @@ class InventarioWidget(QWidget):
         main_lay.addLayout(acciones_bottom)
 
         # ── 2. Tarjetas KPI (Métricas Clave) ─────────────────────────────────
-        kpis_layout = QHBoxLayout()
+        kpis_layout = QGridLayout()
         kpis_layout.setSpacing(10)
 
         self.kpi_costo = self._crear_kpi_card(
@@ -333,11 +336,10 @@ class InventarioWidget(QWidget):
             "⚠️ ALERTAS DE STOCK", "0 Críticos", "0 agotados · 0 bajos", PALETTE["warning"], "rgba(245, 158, 11, 0.4)"
         )
 
-        kpis_layout.addWidget(self.kpi_costo)
-        kpis_layout.addWidget(self.kpi_venta)
-        kpis_layout.addWidget(self.kpi_ganancia)
-        kpis_layout.addWidget(self.kpi_ventas_real)
-        kpis_layout.addWidget(self.kpi_alertas)
+        for indice, card in enumerate((self.kpi_costo, self.kpi_venta,
+                                      self.kpi_ganancia, self.kpi_ventas_real,
+                                      self.kpi_alertas)):
+            kpis_layout.addWidget(card, indice // 3, indice % 3)
 
         main_lay.addLayout(kpis_layout)
 
@@ -356,6 +358,7 @@ class InventarioWidget(QWidget):
         alert_lay.setSpacing(14)
 
         self.lbl_alert_msg = QLabel("⚠ Existen productos que han alcanzado su stock mínimo o están agotados.")
+        self.lbl_alert_msg.setWordWrap(True)
         self.lbl_alert_msg.setStyleSheet(f"color: {PALETTE['warning']}; font-weight: bold; font-size: 13px; background: transparent; border: none;")
         alert_lay.addWidget(self.lbl_alert_msg)
 
@@ -390,6 +393,7 @@ class InventarioWidget(QWidget):
         # ── 4. Pestañas de Contenido ─────────────────────────────────────────
         self.tabs = QTabWidget()
         self.tabs.setObjectName("tabs_inv")
+        self.tabs.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
         self.tabs.tabBar().setExpanding(True)
         self.tabs.setStyleSheet("QTabBar::tab { min-width: 120px; min-height: 36px; padding: 0 10px; }")
         main_lay.addWidget(self.tabs, 1)
@@ -415,6 +419,7 @@ class InventarioWidget(QWidget):
         lay.setSpacing(3)
 
         lbl_t = QLabel(titulo)
+        lbl_t.setWordWrap(True)
         lbl_t.setStyleSheet(f"color: {PALETTE['text_secondary']}; font-size: 11px; font-weight: bold; letter-spacing: 0.5px;")
         lay.addWidget(lbl_t)
 
@@ -424,6 +429,7 @@ class InventarioWidget(QWidget):
         lay.addWidget(lbl_v)
 
         lbl_s = QLabel(subtitulo)
+        lbl_s.setWordWrap(True)
         lbl_s.setObjectName("sub_label")
         lbl_s.setStyleSheet(f"color: {PALETTE['text_muted']}; font-size: 11px;")
         lay.addWidget(lbl_s)
@@ -471,6 +477,7 @@ class InventarioWidget(QWidget):
 
         # Tabla de inventario y ganancias
         self.tabla_inv = QTableWidget(0, 12)
+        self.tabla_inv.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
         headers = [
             "Código", "Descripción del Producto", "Categoría",
             "Stock", "Mínimo", f"Costo ({CURRENCY})", f"Venta ({CURRENCY})",
@@ -562,6 +569,7 @@ class InventarioWidget(QWidget):
 
         # Tabla de alertas
         self.tabla_alertas = QTableWidget(0, 9)
+        self.tabla_alertas.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
         self.tabla_alertas.setHorizontalHeaderLabels([
             "Nivel", "Código", "Descripción", "Categoría",
             "Stock", "Mínimo", "Faltante", f"Costo Unit.", "Acción"
@@ -634,6 +642,7 @@ class InventarioWidget(QWidget):
 
         # Tabla top productos vendidos
         self.tabla_ventas_prod = QTableWidget(0, 7)
+        self.tabla_ventas_prod.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
         self.tabla_ventas_prod.setHorizontalHeaderLabels([
             "Código", "Producto", "Vendidos",
             f"Total Ventas ({CURRENCY})", f"Costo Total ({CURRENCY})",
@@ -679,6 +688,7 @@ class InventarioWidget(QWidget):
 
         # Tabla de historial
         self.tabla_ajustes = QTableWidget(0, 6)
+        self.tabla_ajustes.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
         self.tabla_ajustes.setHorizontalHeaderLabels([
             "Fecha y Hora", "Producto", "Tipo Movimiento", "Cantidad", "Motivo", "Usuario Responsable"
         ])
