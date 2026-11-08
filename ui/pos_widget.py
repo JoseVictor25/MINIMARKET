@@ -1794,7 +1794,7 @@ class CobroExitosoDialog(QDialog):
         self.setWindowTitle("✓ Venta Completada – Caja Mini Market")
         # Ventana compacta: la información esencial cabe sin ocupar toda la
         # pantalla en laptops de 1280×720 lógicos.
-        self.setMinimumSize(460, 500)
+        self.setMinimumSize(480, 460)
         self.resize(500, 560)
         self.setModal(True)
         self._build_ui()
@@ -1805,8 +1805,12 @@ class CobroExitosoDialog(QDialog):
         try:
             pantalla = self.screen() or QApplication.primaryScreen()
             disp = pantalla.availableGeometry()
-            ancho = max(self.minimumWidth(), min(self.width(), int(disp.width() * 0.9)))
-            alto = max(self.minimumHeight(), min(self.height(), int(disp.height() * 0.9)))
+            limite_ancho = max(1, int(disp.width() * 0.9))
+            limite_alto = max(1, int(disp.height() * 0.9))
+            self.setMinimumSize(min(480, limite_ancho), min(460, limite_alto))
+            sugerido = self.layout().sizeHint()
+            ancho = min(limite_ancho, max(480, sugerido.width()))
+            alto = min(limite_alto, max(460, sugerido.height()))
             self.resize(ancho, alto)
             x = disp.x() + max(0, (disp.width() - ancho) // 2)
             y = disp.y() + max(0, (disp.height() - alto) // 2)
@@ -1876,18 +1880,18 @@ class CobroExitosoDialog(QDialog):
         # Fila Método y Desglose
         metodo = self.venta_info["metodo"]
         f_metodo = QHBoxLayout()
+        f_metodo.setSpacing(8)
         lbl_m_txt = QLabel("Método de pago:")
-        lbl_m_txt.setWordWrap(True)
         lbl_m_txt.setStyleSheet(f"color: {PALETTE['text_secondary']}; font-size: 14px; font-weight: 600;")
-        f_metodo.addWidget(lbl_m_txt)
-        f_metodo.addStretch()
+        f_metodo.addWidget(lbl_m_txt, 0, Qt.AlignTop)
 
         if metodo == "mixto":
             lbl_m_val = QLabel("🔄 Pago Mixto (QR + Efectivo)")
             lbl_m_val.setWordWrap(True)
             lbl_m_val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            lbl_m_val.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
             lbl_m_val.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {PALETTE['accent']};")
-            f_metodo.addWidget(lbl_m_val)
+            f_metodo.addWidget(lbl_m_val, 1)
             c_lay.addLayout(f_metodo)
 
             # Tarjeta con desglose de Pago Mixto
@@ -1951,8 +1955,9 @@ class CobroExitosoDialog(QDialog):
             lbl_m_val = QLabel(det_pago)
             lbl_m_val.setWordWrap(True)
             lbl_m_val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            lbl_m_val.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
             lbl_m_val.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {color_m};")
-            f_metodo.addWidget(lbl_m_val)
+            f_metodo.addWidget(lbl_m_val, 1)
             c_lay.addLayout(f_metodo)
 
         # Información de Verificación QR y Comprobante
@@ -2007,25 +2012,28 @@ class CobroExitosoDialog(QDialog):
                 }
             """)
             vb_lay = QVBoxLayout(vuelto_box)
-            vb_lay.setContentsMargins(16, 10, 16, 10)
-            vb_lay.setAlignment(Qt.AlignCenter)
-            vb_lay.setSpacing(4)
+            vb_lay.setContentsMargins(16, 14, 16, 14)
+            vb_lay.setSpacing(8)
 
-            lbl_vb_tit = QLabel("💵 VUELTO A ENTREGAR AL CLIENTE (EN EFECTIVO):")
+            lbl_vb_tit = QLabel("VUELTO A ENTREGAR")
             lbl_vb_tit.setAlignment(Qt.AlignCenter)
             lbl_vb_tit.setWordWrap(True)
             lbl_vb_tit.setStyleSheet("color: #a7f3d0; font-size: 13px; font-weight: bold; letter-spacing: 0.5px;")
+            lbl_vb_tit.setMinimumHeight(lbl_vb_tit.fontMetrics().lineSpacing() + 4)
             vb_lay.addWidget(lbl_vb_tit)
 
             lbl_vb_val = QLabel(f"{CURRENCY} {vuelto:.2f}")
             lbl_vb_val.setAlignment(Qt.AlignCenter)
             lbl_vb_val.setStyleSheet("font-size: 30px; font-weight: 900; color: #4ade80;")
+            lbl_vb_val.setMinimumHeight(lbl_vb_val.fontMetrics().lineSpacing() + 4)
             vb_lay.addWidget(lbl_vb_val)
 
             lbl_vb_sub = QLabel("Entregue el dinero de cambio al cliente antes de continuar.")
             lbl_vb_sub.setAlignment(Qt.AlignCenter)
             lbl_vb_sub.setWordWrap(True)
             lbl_vb_sub.setStyleSheet("color: #d1fae5; font-size: 13px; font-weight: 500;")
+            lbl_vb_sub.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+            lbl_vb_sub.setMinimumHeight(lbl_vb_sub.fontMetrics().lineSpacing() * 2 + 4)
             vb_lay.addWidget(lbl_vb_sub)
         else:
             vuelto_box.setStyleSheet(f"""
@@ -2048,7 +2056,13 @@ class CobroExitosoDialog(QDialog):
             vb_lay.addWidget(lbl_no_vuelto)
 
         c_lay.addWidget(vuelto_box)
-        lay.addWidget(card)
+        card.setMinimumHeight(card.sizeHint().height())
+        card_scroll = QScrollArea()
+        card_scroll.setWidgetResizable(True)
+        card_scroll.setFrameShape(QFrame.NoFrame)
+        card_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        card_scroll.setWidget(card)
+        lay.addWidget(card_scroll, 1)
 
         # Botones de Acción
         actions_lay = QVBoxLayout()

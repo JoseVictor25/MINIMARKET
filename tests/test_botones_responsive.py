@@ -5,12 +5,13 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from contextlib import contextmanager
 import importlib
+from pathlib import Path
 
 import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt5.QtWidgets import QApplication, QHBoxLayout, QPushButton, QWidget
+from PyQt5.QtWidgets import QApplication, QHBoxLayout, QLabel, QPushButton, QWidget
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -123,6 +124,34 @@ def test_fechas_de_reportes_permanecen_juntas(tmp_path):
         assert panel.combo_cajero.width() == 240
         panel.close()
     engine.dispose()
+
+
+def test_cobro_exitoso_muestra_vuelto_sin_superponer_etiquetas():
+    app = QApplication.instance() or QApplication([])
+    from ui.pos_widget import CobroExitosoDialog
+    dialogo = CobroExitosoDialog({
+        "numero": 1, "total": Decimal("99"), "metodo": "efectivo",
+        "monto_recibido": Decimal("101"), "vuelto": Decimal("2"),
+    }, Path("ticket.pdf"))
+    dialogo.show()
+    app.processEvents()
+    etiquetas = dialogo.findChildren(QLabel)
+    titulo = next(e for e in etiquetas if e.text() == "VUELTO A ENTREGAR")
+    monto = next(e for e in etiquetas if e.text() == "Bs 2.00")
+    instruccion = next(e for e in etiquetas if e.text().startswith("Entregue el dinero"))
+    metodo = next(e for e in etiquetas if "Recibido:" in e.text())
+    def limites(etiqueta):
+        y = etiqueta.mapTo(dialogo, etiqueta.rect().topLeft()).y()
+        return y, y + etiqueta.height()
+    assert limites(titulo)[1] <= limites(monto)[0]
+    assert limites(monto)[1] <= limites(instruccion)[0]
+    assert instruccion.height() >= instruccion.sizeHint().height()
+    assert metodo.width() >= metodo.fontMetrics().horizontalAdvance("Efectivo")
+    assert dialogo.btn_siguiente.isVisibleTo(dialogo)
+    pantalla = dialogo.screen().availableGeometry()
+    assert dialogo.width() <= pantalla.width() * .9 + 1
+    assert dialogo.height() <= pantalla.height() * .9 + 1
+    dialogo.close()
 
 
 def test_inventario_cabe_en_ancho_logico_reducido(tmp_path):
