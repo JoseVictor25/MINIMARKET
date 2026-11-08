@@ -9,8 +9,8 @@ import unicodedata
 from datetime import datetime, date
 from decimal import Decimal
 
-from PyQt5.QtCore import Qt, QDate, QEvent, QStringListModel, pyqtSignal
-from PyQt5.QtGui import QFont, QColor
+from PyQt5.QtCore import Qt, QDate, QEvent, QSize, QStringListModel, pyqtSignal
+from PyQt5.QtGui import QFont, QColor, QIcon, QPainter, QPen, QPixmap
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
     QLineEdit, QPushButton, QTableWidget, QTableWidgetItem,
@@ -28,7 +28,7 @@ from models.usuario import Usuario
 from services.compra_service import registrar_compra
 from services.export_service import exportar_compras_excel, exportar_compras_pdf
 from config import CURRENCY, APP_NAME
-from ui.styles import PALETTE, configurar_calendario_elegante, normalizar_botones, igualar_fila
+from ui.styles import PALETTE, BUTTON_METRICS, configurar_calendario_elegante, normalizar_botones, igualar_fila
 
 
 class NuevaCompraDialog(QDialog):
@@ -237,13 +237,13 @@ class NuevaCompraDialog(QDialog):
         self.tabla.setColumnWidth(2, 95)
         self.tabla.setColumnWidth(3, 115)
         self.tabla.setColumnWidth(4, 120)
-        self.tabla.setColumnWidth(5, 105)
+        self.tabla.setColumnWidth(5, 110)
         header.setFixedHeight(38)
 
         self.tabla.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tabla.setAlternatingRowColors(True)
         self.tabla.verticalHeader().setVisible(False)
-        self.tabla.verticalHeader().setDefaultSectionSize(42)
+        self.tabla.verticalHeader().setDefaultSectionSize(40)
         root.addWidget(self.tabla, 1)
 
         # ── Total y botones ──────────────────────────────────────────────────
@@ -451,6 +451,13 @@ class NuevaCompraDialog(QDialog):
     def _refrescar_tabla(self):
         self.tabla.setRowCount(len(self._items))
         total = Decimal("0.00")
+        icono_quitar = QPixmap(10, 10)
+        icono_quitar.fill(Qt.transparent)
+        pintor = QPainter(icono_quitar)
+        pintor.setPen(QPen(QColor("#ffffff"), 2))
+        pintor.drawLine(2, 2, 8, 8)
+        pintor.drawLine(8, 2, 2, 8)
+        pintor.end()
         for i, item in enumerate(self._items):
             p = item["producto"]
             c = item["cantidad"]
@@ -480,34 +487,36 @@ class NuevaCompraDialog(QDialog):
             self.tabla.setItem(i, 4, it_sub)
 
             # Botón de eliminar
-            btn_quitar = QPushButton("✕ Quitar")
+            btn_quitar = QPushButton("Quitar")
             btn_quitar.setToolTip("Quitar producto de la lista")
             btn_quitar.setCursor(Qt.PointingHandCursor)
-            btn_quitar.setMinimumWidth(82)
-            btn_quitar.setFixedHeight(32)
+            btn_quitar.setIcon(QIcon(icono_quitar))
+            btn_quitar.setIconSize(QSize(10, 10))
+            btn_quitar.setFixedSize(100, BUTTON_METRICS["compact"][0])
             btn_quitar.setStyleSheet("""
                 QPushButton {
-                    background-color: rgba(239, 68, 68, 0.2);
-                    color: #f87171;
-                    border: 1px solid #ef4444;
+                    background-color: #991b1b;
+                    color: #ffffff;
+                    border: 1px solid #f87171;
                     border-radius: 6px;
-                    font-size: 14px;
+                    font-size: 13px;
                     font-weight: bold;
-                    padding: 0 8px;
-                    margin: 0px;
+                    padding: 0 2px;
                 }
                 QPushButton:hover {
-                    background-color: #ef4444;
+                    background-color: #7f1d1d;
                     color: #ffffff;
                 }
+                QPushButton:pressed { background-color: #450a0a; }
+                QPushButton:disabled { background-color: #374151; color: #f1f5f9; }
             """)
             btn_quitar.clicked.connect(lambda _, row=i: self._eliminar_item(row))
 
             c_widget = QWidget()
             c_lay = QHBoxLayout(c_widget)
-            c_lay.setContentsMargins(0, 0, 0, 0)
+            c_lay.setContentsMargins(4, 4, 4, 4)
             c_lay.setAlignment(Qt.AlignCenter)
-            c_lay.addWidget(btn_quitar)
+            c_lay.addWidget(btn_quitar, 0, Qt.AlignCenter)
             self.tabla.setCellWidget(i, 5, c_widget)
 
         self.lbl_total.setText(f"Total: {CURRENCY} {total:.2f}")

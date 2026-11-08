@@ -154,6 +154,40 @@ def test_cobro_exitoso_muestra_vuelto_sin_superponer_etiquetas():
     dialogo.close()
 
 
+def test_quitar_compra_cabe_en_su_celda(tmp_path):
+    from PyQt5.QtCore import QPoint
+    from PyQt5.QtTest import QTest
+    app = QApplication.instance() or QApplication([])
+    engine = create_engine(f"sqlite:///{tmp_path / 'compra.db'}")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    from ui.compras_widget import NuevaCompraDialog
+    with Session() as sesion:
+        dialogo = NuevaCompraDialog(session=sesion)
+        dialogo._items = [{
+            "producto": SimpleNamespace(codigo_barras="001", descripcion="Producto"),
+            "cantidad": Decimal("1"), "precio_unitario_bs": Decimal("2"),
+        }]
+        dialogo._refrescar_tabla()
+        dialogo.show()
+        app.processEvents()
+        celda = dialogo.tabla.cellWidget(0, 5)
+        boton = celda.findChild(QPushButton)
+        margen = celda.layout().contentsMargins()
+        assert dialogo.tabla.columnWidth(5) == 110
+        assert dialogo.tabla.rowHeight(0) == 40
+        assert (margen.left(), margen.top(), margen.right(), margen.bottom()) == (4, 4, 4, 4)
+        assert boton.height() == BUTTON_METRICS["compact"][0] == 28
+        assert boton.width() <= celda.width() - margen.left() - margen.right()
+        assert boton.fontMetrics().horizontalAdvance(boton.text()) + boton.iconSize().width() + 10 <= boton.width()
+        assert boton.grab().toImage().pixelColor(5, 14).name() == "#991b1b"
+        QTest.mouseMove(boton, QPoint(5, 14))
+        app.processEvents()
+        assert boton.grab().toImage().pixelColor(5, 14).name() == "#7f1d1d"
+        dialogo.close()
+    engine.dispose()
+
+
 def test_inventario_cabe_en_ancho_logico_reducido(tmp_path):
     app = QApplication.instance() or QApplication([])
     estilo_anterior = app.styleSheet()
