@@ -135,9 +135,13 @@ class TicketLayout:
                     y -= LINE_HEIGHT
             elif op["tipo"] == "linea":
                 c.setLineWidth(op["width"])
+                # La línea se centra entre la línea base del texto anterior y
+                # la del siguiente, en lugar de dibujarse pegada al texto que
+                # viene debajo.
+                y_linea = y + (LINE_HEIGHT - op["gap"]) / 2
                 c.line(
-                    op["x1"] if op["x1"] is not None else SAFE_MARGIN, y,
-                    op["x2"] if op["x2"] is not None else self.width - SAFE_MARGIN, y,
+                    op["x1"] if op["x1"] is not None else SAFE_MARGIN, y_linea,
+                    op["x2"] if op["x2"] is not None else self.width - SAFE_MARGIN, y_linea,
                 )
                 y -= op["gap"]
             elif op["tipo"] == "firmas":
@@ -152,22 +156,33 @@ class TicketLayout:
             elif op["tipo"] == "gap":
                 y -= LINE_HEIGHT * op["n"]
 
-    def dibujar_qt(self, painter, escala: float):
+    def dibujar_qt(self, painter, dpi: float = 203.0):
         """
-        Dibuja el layout sobre un ``QPainter`` ya escalado a milímetros.
+        Dibuja el layout sobre un ``QPainter`` sin transformar.
+
+        El layout guarda posiciones y tamaños en puntos PostScript (1/72"),
+        por lo que se convierten a píxeles del dispositivo usando ``dpi``.
+        Así el texto conserva su tamaño físico real al imprimir.
 
         :param painter: QPainter activo.
-        :param escala:  factor aplicado al painter (dpi / 25.4).
+        :param dpi:     resolución del dispositivo de salida.
         """
         from PyQt5.QtCore import QPointF, Qt
         from PyQt5.QtGui import QFont, QFontMetricsF, QPen
 
-        ancho_mm = self.width / mm
-        y = self.altura() / mm - TOP_MARGIN / mm
+        dpi = float(dpi or 203.0)
+        px_por_pt = dpi / 72.0
+
+        def px(valor_pt: float) -> float:
+            return float(valor_pt) * px_por_pt
+
+        ancho = px(self.width)
+        y = px(self.altura() - TOP_MARGIN)
 
         def preparar_fuente(nombre: str, tam: float) -> QFontMetricsF:
             f = QFont("Arial")
-            f.setPointSizeF(tam)
+            # setPixelSize evita que Qt aplique el DPI lógico de la pantalla.
+            f.setPixelSize(max(1, int(round(tam * px_por_pt))))
             f.setBold("Bold" in nombre)
             painter.setFont(f)
             device = painter.device()
@@ -177,45 +192,44 @@ class TicketLayout:
             if op["tipo"] == "texto":
                 fm = preparar_fuente(op["font"], op["size"])
                 for linea in op["lineas"]:
-                    w = fm.horizontalAdvance(linea) / escala
+                    w = fm.horizontalAdvance(linea)
                     if op["align"] == "center":
-                        x = (ancho_mm - w) / 2
+                        x = (ancho - w) / 2
                     elif op["align"] == "right":
-                        x = ancho_mm - SAFE_MARGIN / mm - w
+                        x = ancho - px(SAFE_MARGIN) - w
                     else:
-                        x = (op["x"] if op["x"] is not None else SAFE_MARGIN) / mm
+                        x = px(op["x"] if op["x"] is not None else SAFE_MARGIN)
                     painter.drawText(QPointF(x, y), linea)
-                    y -= LINE_HEIGHT / mm
+                    y -= px(LINE_HEIGHT)
             elif op["tipo"] == "fila":
                 fm = preparar_fuente(op["font"], op["size"])
                 for i, linea in enumerate(op["lineas"]):
-                    x = (op["x"] if op["x"] is not None else SAFE_MARGIN) / mm
+                    x = px(op["x"] if op["x"] is not None else SAFE_MARGIN)
                     painter.drawText(QPointF(x, y), linea)
                     if i == 0:
-                        w = fm.horizontalAdvance(op["value"]) / escala
-                        xr = (op["x_right"] if op["x_right"] is not None else self.width - SAFE_MARGIN) / mm - w
+                        w = fm.horizontalAdvance(op["value"])
+                        xr = px(op["x_right"] if op["x_right"] is not None else self.width - SAFE_MARGIN) - w
                         painter.drawText(QPointF(xr, y), op["value"])
-                    y -= LINE_HEIGHT / mm
+                    y -= px(LINE_HEIGHT)
             elif op["tipo"] == "linea":
-                painter.setPen(QPen(Qt.black, op["width"]))
-                x1 = (op["x1"] if op["x1"] is not None else SAFE_MARGIN) / mm
-                x2 = (op["x2"] if op["x2"] is not None else self.width - SAFE_MARGIN) / mm
-                painter.drawLine(QPointF(x1, y), QPointF(x2, y))
-                y -= op["gap"] / mm
+                painter.setPen(QPen(Qt.black, max(0.8, px(op["width"]))))
+                x1 = px(op["x1"] if op["x1"] is not None else SAFE_MARGIN)
+                x2 = px(op["x2"] if op["x2"] is not None else self.width - SAFE_MARGIN)
+                y_linea = y + (px(LINE_HEIGHT) - px(op["gap"])) / 2
+                painter.drawLine(QPointF(x1, y_linea), QPointF(x2, y_linea))
+                y -= px(op["gap"])
             elif op["tipo"] == "firmas":
-                painter.setPen(QPen(Qt.black, 0.3))
-                painter.drawLine(QPointF(8, y), QPointF(36, y))
-                painter.drawLine(QPointF(44, y), QPointF(72, y))
-                y -= LINE_HEIGHT / mm
-                preparar_fuente("Helvetica", 7)
-                device = painter.device()
-                fm = QFontMetricsF(painter.font(), device) if device is not None else QFontMetricsF(painter.font())
+                painter.setPen(QPen(Qt.black, max(0.8, px(0.3))))
+                painter.drawLine(QPointF(px(8 * mm), y), QPointF(px(36 * mm), y))
+                painter.drawLine(QPointF(px(44 * mm), y), QPointF(px(72 * mm), y))
+                y -= px(LINE_HEIGHT)
+                fm = preparar_fuente("Helvetica", 7)
                 for texto, centro in (("Firma Cajero", 22), ("Firma Supervisor", 58)):
-                    w = fm.horizontalAdvance(texto) / escala
-                    painter.drawText(QPointF(centro - w / 2, y), texto)
-                y -= LINE_HEIGHT / mm
+                    w = fm.horizontalAdvance(texto)
+                    painter.drawText(QPointF(px(centro * mm) - w / 2, y), texto)
+                y -= px(LINE_HEIGHT)
             elif op["tipo"] == "gap":
-                y -= (LINE_HEIGHT * op["n"]) / mm
+                y -= px(LINE_HEIGHT * op["n"])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
