@@ -23,7 +23,7 @@ from PyQt5.QtGui import QFont, QColor
 from database import SessionLocal, get_session
 from models.usuario import Usuario
 from config import CURRENCY, APP_NAME
-from ui.styles import PALETTE, configurar_calendario_elegante
+from ui.styles import PALETTE, configurar_calendario_elegante, normalizar_botones, igualar_fila
 from services.reporte_service import (
     obtener_metricas_generales,
     obtener_ventas_cronologicas,
@@ -123,9 +123,12 @@ class ReportesWidget(QWidget):
                 min-height: 24px;
             }}
         """)
-        f_lay = QHBoxLayout(filtros_card)
+        f_lay = QVBoxLayout(filtros_card)
         f_lay.setContentsMargins(14, 10, 14, 10)
         f_lay.setSpacing(10)
+        rapidos = QHBoxLayout()
+        fechas = QHBoxLayout()
+        fechas.setSpacing(10)
 
         # Botones Rápidos de Período
         btn_estilo_rapido = f"""
@@ -147,51 +150,46 @@ class ReportesWidget(QWidget):
         btn_hoy = QPushButton("Hoy")
         btn_hoy.setStyleSheet(btn_estilo_rapido)
         btn_hoy.clicked.connect(self._set_periodo_hoy)
-        f_lay.addWidget(btn_hoy)
+        rapidos.addWidget(btn_hoy)
 
         btn_ayer = QPushButton("Ayer")
         btn_ayer.setStyleSheet(btn_estilo_rapido)
         btn_ayer.clicked.connect(self._set_periodo_ayer)
-        f_lay.addWidget(btn_ayer)
+        rapidos.addWidget(btn_ayer)
 
         btn_7d = QPushButton("7 Días")
         btn_7d.setStyleSheet(btn_estilo_rapido)
         btn_7d.clicked.connect(self._set_periodo_7d)
-        f_lay.addWidget(btn_7d)
+        rapidos.addWidget(btn_7d)
 
         btn_mes = QPushButton("Este Mes")
         btn_mes.setStyleSheet(btn_estilo_rapido)
         btn_mes.clicked.connect(self._set_periodo_mes_actual)
-        f_lay.addWidget(btn_mes)
+        rapidos.addWidget(btn_mes)
 
-        f_lay.addSpacing(8)
-        linea_v = QFrame()
-        linea_v.setFrameShape(QFrame.VLine)
-        linea_v.setStyleSheet(f"border-left: 1px solid {PALETTE['border']};")
-        f_lay.addWidget(linea_v)
-        f_lay.addSpacing(8)
+        f_lay.addLayout(rapidos)
 
         # Selectores de Fechas
-        f_lay.addWidget(QLabel("Desde:"))
+        fechas.addWidget(QLabel("Desde:"))
         self.date_desde = QDateEdit()
         self.date_desde.setCalendarPopup(True)
         self.date_desde.setDisplayFormat("dd/MM/yyyy")
         configurar_calendario_elegante(self.date_desde)
-        f_lay.addWidget(self.date_desde)
+        fechas.addWidget(self.date_desde)
 
-        f_lay.addWidget(QLabel("Hasta:"))
+        fechas.addWidget(QLabel("Hasta:"))
         self.date_hasta = QDateEdit()
         self.date_hasta.setCalendarPopup(True)
         self.date_hasta.setDisplayFormat("dd/MM/yyyy")
         configurar_calendario_elegante(self.date_hasta)
-        f_lay.addWidget(self.date_hasta)
+        fechas.addWidget(self.date_hasta)
 
         # Selector de Cajero
-        f_lay.addWidget(QLabel("Cajero:"))
+        fechas.addWidget(QLabel("Cajero:"))
         self.combo_cajero = QComboBox()
         self.combo_cajero.addItem("👤 Todos los Cajeros", None)
         self._cargar_combo_cajeros()
-        f_lay.addWidget(self.combo_cajero)
+        fechas.addWidget(self.combo_cajero)
 
         btn_filtrar = QPushButton("🔎 Filtrar")
         btn_filtrar.setStyleSheet(f"""
@@ -207,9 +205,10 @@ class ReportesWidget(QWidget):
             QPushButton:hover {{ background: {PALETTE['accent']}; }}
         """)
         btn_filtrar.clicked.connect(self.actualizar)
-        f_lay.addWidget(btn_filtrar)
+        fechas.addWidget(btn_filtrar)
 
-        f_lay.addStretch()
+        fechas.addStretch()
+        f_lay.addLayout(fechas)
         root.addWidget(filtros_card)
 
         # ── 3. Fila de Tarjetas KPI (Indicadores Clave) ────────────────────────
@@ -326,6 +325,9 @@ class ReportesWidget(QWidget):
         self.tabs.addTab(self.tab_diario, "📅 Tendencia Temporal")
 
         root.addWidget(self.tabs, 1)
+        normalizar_botones(self)
+        igualar_fila(top_bar, self.btn_export_excel, self.btn_pdf, tipo="standard")
+        igualar_fila(rapidos, btn_hoy, btn_ayer, btn_7d, btn_mes, tipo="standard")
 
     # ── Construcción de Pestañas ──────────────────────────────────────────────
 
