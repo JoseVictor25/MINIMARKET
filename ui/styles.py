@@ -246,114 +246,130 @@ QComboBox QAbstractItemView::item:selected {{
     font-weight: bold;
 }}
 QPushButton {{
-    background-color: {PALETTE['bg_hover']};
-    color: {PALETTE['text_primary']};
-    border: 1px solid {PALETTE['border']};
+    background-color: {BUTTON_COLORS['standard'][0]};
+    color: #ffffff;
+    border: 1px solid #64748b;
     border-radius: 7px;
-    padding: 7px 18px;
+    padding: 0 {BUTTON_METRICS['standard'][2]}px;
     font-weight: 600;
-    font-size: 13px;
-    min-height: 32px;
+    font-size: {BUTTON_METRICS['standard'][1]}px;
+    min-height: {BUTTON_METRICS['standard'][0]}px;
 }}
 QPushButton:hover {{
-    background-color: {PALETTE['accent']};
-    color: {PALETTE['white']};
-    border-color: {PALETTE['accent']};
+    background-color: {BUTTON_COLORS['standard'][1]};
+    color: #ffffff;
+    border-color: #64748b;
 }}
 QPushButton:pressed {{
-    background-color: {PALETTE['accent_dark']};
-    color: {PALETTE['white']};
+    background-color: {BUTTON_COLORS['standard'][2]};
+    color: #ffffff;
 }}
 QPushButton:disabled {{
-    background-color: {PALETTE['bg_surface']};
-    color: {PALETTE['text_muted']};
-    border-color: {PALETTE['border']};
+    background-color: #374151;
+    color: #f1f5f9;
+    border-color: #64748b;
 }}
 QPushButton#btn_primary {{
-    background-color: {PALETTE['accent']};
-    color: {PALETTE['white']};
+    background-color: {BUTTON_COLORS['primary'][0]};
+    color: #ffffff;
     border: none;
-    font-size: 13px;
+    font-size: {BUTTON_METRICS['primary'][1]}px;
     font-weight: bold;
-    min-height: 36px;
+    min-height: {BUTTON_METRICS['primary'][0]}px;
     border-radius: 8px;
-    padding: 7px 20px;
+    padding: 0 {BUTTON_METRICS['primary'][2]}px;
 }}
 QPushButton#btn_primary:hover {{
-    background-color: {PALETTE['accent_hover']};
-    color: {PALETTE['white']};
+    background-color: {BUTTON_COLORS['primary'][1]};
+    color: #ffffff;
 }}
 QPushButton#btn_primary:pressed {{
-    background-color: {PALETTE['accent_dark']};
-    color: {PALETTE['white']};
+    background-color: {BUTTON_COLORS['primary'][2]};
+    color: #ffffff;
 }}
 QPushButton#btn_success {{
-    background-color: {PALETTE['success']};
-    color: {PALETTE['white']};
+    background-color: {BUTTON_COLORS['success'][0]};
+    color: #ffffff;
     border: none;
-    font-size: 13px;
-    min-height: 36px;
+    font-size: {BUTTON_METRICS['primary'][1]}px;
+    min-height: {BUTTON_METRICS['primary'][0]}px;
     border-radius: 8px;
     font-weight: bold;
-    padding: 7px 20px;
+    padding: 0 {BUTTON_METRICS['primary'][2]}px;
 }}
 QPushButton#btn_success:hover {{
-    background-color: #059669;
-    color: {PALETTE['white']};
+    background-color: {BUTTON_COLORS['success'][1]};
+    color: #ffffff;
 }}
 QPushButton#btn_success:pressed {{
-    background-color: #047857;
-    color: {PALETTE['white']};
+    background-color: {BUTTON_COLORS['success'][2]};
+    color: #ffffff;
 }}
 QPushButton#btn_danger {{
-    background-color: {PALETTE['danger']};
-    color: {PALETTE['white']};
+    background-color: {BUTTON_COLORS['danger'][0]};
+    color: #ffffff;
     border: none;
     border-radius: 7px;
-    padding: 7px 18px;
+    padding: 0 {BUTTON_METRICS['standard'][2]}px;
     font-weight: bold;
-    min-height: 32px;
+    font-size: {BUTTON_METRICS['standard'][1]}px;
+    min-height: {BUTTON_METRICS['standard'][0]}px;
 }}
 QPushButton#btn_danger:hover {{
-    background-color: #e11d48;
-    color: {PALETTE['white']};
+    background-color: {BUTTON_COLORS['danger'][1]};
+    color: #ffffff;
 }}
 QPushButton#btn_danger:pressed {{
-    background-color: #be123c;
-    color: {PALETTE['white']};
+    background-color: {BUTTON_COLORS['danger'][2]};
+    color: #ffffff;
 }}
 QPushButton#btn_warning {{
-    background-color: {PALETTE['warning']};
-    color: #1c1917;
+    background-color: {BUTTON_COLORS['warning'][0]};
+    color: #ffffff;
     border: none;
     border-radius: 7px;
-    padding: 7px 18px;
+    padding: 0 {BUTTON_METRICS['standard'][2]}px;
     font-weight: bold;
-    min-height: 32px;
+    font-size: {BUTTON_METRICS['standard'][1]}px;
+    min-height: {BUTTON_METRICS['standard'][0]}px;
 }}
 QPushButton#btn_warning:hover {{
-    background-color: #d97706;
-    color: #1c1917;
+    background-color: {BUTTON_COLORS['warning'][1]};
+    color: #ffffff;
 }}
 QPushButton#btn_warning:pressed {{
-    background-color: #b45309;
-    color: {PALETTE['white']};
+    background-color: {BUTTON_COLORS['warning'][2]};
+    color: #ffffff;
+}}
+QPushButton#btn_primary:disabled, QPushButton#btn_success:disabled,
+QPushButton#btn_danger:disabled, QPushButton#btn_warning:disabled {{
+    background-color: #374151;
+    color: #f1f5f9;
+    border: 1px solid #64748b;
 }}
 QPushButton#btn_fkey {{
-    background-color: {PALETTE['bg_card']};
-    color: {PALETTE['accent']};
-    border: 1px solid {PALETTE['border']};
+    background-color: {BUTTON_COLORS['standard'][0]};
+    color: #ffffff;
+    border: 1px solid #64748b;
     border-radius: 6px;
-    padding: 4px 10px;
-    font-size: 11px;
+    padding: 0 {BUTTON_METRICS['compact'][2]}px;
+    font-size: {BUTTON_METRICS['compact'][1]}px;
     font-weight: bold;
-    min-height: 28px;
-    min-width: 70px;
+    min-height: {BUTTON_METRICS['compact'][0]}px;
+    min-width: {BUTTON_METRICS['compact'][3]}px;
 }}
 QPushButton#btn_fkey:hover {{
-    background-color: {PALETTE['accent']};
-    color: {PALETTE['white']};
-    border-color: {PALETTE['accent']};
+    background-color: {BUTTON_COLORS['standard'][1]};
+    color: #ffffff;
+    border-color: #64748b;
+}}
+QPushButton#btn_fkey:pressed {{
+    background-color: {BUTTON_COLORS['standard'][2]};
+    color: #ffffff;
+}}
+QPushButton#btn_fkey:disabled {{
+    background-color: #374151;
+    color: #f1f5f9;
 }}
 QTableWidget {{
     background-color: {PALETTE['bg_surface']};
