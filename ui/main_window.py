@@ -201,10 +201,11 @@ class CerrarSesionDialog(QDialog):
         footer_lay = QHBoxLayout(footer)
         footer_lay.setContentsMargins(24, 16, 24, 16)
         footer_lay.setSpacing(14)
+        footer_lay.addStretch()
 
         btn_cancel = QPushButton("Cancelar")
+        btn_cancel.setDefault(True)
         btn_cancel.setCursor(Qt.PointingHandCursor)
-        btn_cancel.setFixedSize(120, 42)
         btn_cancel.setStyleSheet("""
             QPushButton {
                 background-color: #1e293b;
@@ -227,11 +228,11 @@ class CerrarSesionDialog(QDialog):
             }
         """)
         btn_cancel.clicked.connect(self.reject)
-        footer_lay.addWidget(btn_cancel, 1, Qt.AlignVCenter)
+        footer_lay.addWidget(btn_cancel)
 
-        btn_confirm = QPushButton(" Cerrar Sesión")
+        btn_confirm = QPushButton("Cerrar")
+        btn_confirm.setToolTip("Cerrar sesión")
         btn_confirm.setCursor(Qt.PointingHandCursor)
-        btn_confirm.setFixedSize(165, 42)
         btn_confirm.setIcon(QIcon("assets/logout_icon_white.png"))
         btn_confirm.setIconSize(QSize(18, 18))
         btn_confirm.setStyleSheet("""
@@ -256,11 +257,11 @@ class CerrarSesionDialog(QDialog):
             }
         """)
         btn_confirm.clicked.connect(self.accept)
-        footer_lay.addWidget(btn_confirm, 1, Qt.AlignVCenter)
+        footer_lay.addWidget(btn_confirm)
 
         root.addWidget(footer)
         igualar_fila(footer_lay, btn_cancel, btn_confirm,
-                     colores=("standard", "danger"))
+                     colores=("standard", "danger"), max_ancho=200)
 
 
 class MainWindow(QMainWindow):
